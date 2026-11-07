@@ -2,7 +2,7 @@ name: ci
 on:
   pull_request:
   push:
-    branches: [cursor/integration, main]
+    branches: [release/v0.1, main]
 permissions:
   contents: read
 jobs:
