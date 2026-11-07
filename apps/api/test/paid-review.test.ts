@@ -49,7 +49,8 @@ describe("paid review acceptance (unit, stubbed mirror node)", () => {
     for (const [mirror, reason] of [
       [tx([{ account: PAYER, amount: -999 }, { account: MERCHANT, amount: 999 }]), "ledger_merchant_amount_mismatch"],
       [tx([{ account: PAYER, amount: -1000 }, { account: "0.0.7777", amount: 1000 }]), "ledger_merchant_amount_mismatch"],
-      [tx([{ account: "0.0.5555", amount: -1000 }, { account: MERCHANT, amount: 1000 }]), "ledger_payer_not_debited"],
+      [tx([{ account: "0.0.5555", amount: -1000 }, { account: MERCHANT, amount: 1000 }]), "ledger_payer_debit_mismatch"],
+      [tx([{ account: PAYER, amount: -1500 }, { account: MERCHANT, amount: 1000 }, { account: "0.0.7777", amount: 500 }]), "ledger_payer_debit_mismatch"],
       [tx([{ account: PAYER, amount: -1000 }, { account: MERCHANT, amount: 1000 }], "INSUFFICIENT_PAYER_BALANCE"), "ledger_result_INSUFFICIENT_PAYER_BALANCE"],
     ] as const) {
       t.net.mirror = mirror;

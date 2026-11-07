@@ -25,7 +25,8 @@ export function toMirrorTransactionId(txId: string): string {
 
 /**
  * Independent ledger confirmation of a paid review: the transaction succeeded and moved exactly
- * `amount` tinybar into the merchant account, debiting at least that much from the payer.
+ * `amount` tinybar from the payer into the merchant account. The facilitator pays the network fee in
+ * the x402 exact scheme, so any other net movement on the payer means extra transfers were bundled in.
  * Not-yet-indexed or unreachable is `unknown`, never a failure and never a success.
  */
 export async function checkHederaTransfer(
@@ -56,6 +57,6 @@ export async function checkHederaTransfer(
   const net = (account: string) => tx.transfers.filter((t) => t.account === account).reduce((sum, t) => sum + BigInt(t.amount), 0n);
   const amount = BigInt(expect.amountTinybar);
   if (net(expect.merchant) !== amount) return { kind: "mismatch", reason: "ledger_merchant_amount_mismatch" };
-  if (net(expect.payer) > -amount) return { kind: "mismatch", reason: "ledger_payer_not_debited" };
+  if (net(expect.payer) !== -amount) return { kind: "mismatch", reason: "ledger_payer_debit_mismatch" };
   return { kind: "confirmed", consensusTimestamp: tx.consensus_timestamp };
 }

@@ -18,6 +18,40 @@ importers:
         specifier: 5.1.0
         version: 5.1.0(@types/node@26.6.6)(vite@8.3.6(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15))
 
+  apps/agent:
+    dependencies:
+      '@hono/node-server':
+        specifier: 2.1.6
+        version: 2.1.6(hono@4.13.16)
+      '@shiplock/github':
+        specifier: workspace:*
+        version: link:../../packages/github
+      '@shiplock/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      '@shiplock/x402':
+        specifier: workspace:*
+        version: link:../../packages/x402
+      '@x402/core':
+        specifier: 2.30.0
+        version: 2.30.0
+      zod:
+        specifier: 4.6.7
+        version: 4.6.7
+    devDependencies:
+      '@types/node':
+        specifier: 26.6.6
+        version: 26.6.6
+      tsx:
+        specifier: 4.23.15
+        version: 4.23.15
+      typescript:
+        specifier: 7.0.2
+        version: 7.0.2
+      vitest:
+        specifier: 5.1.0
+        version: 5.1.0(@types/node@26.6.6)(vite@8.3.6(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15))
+
   apps/api:
     dependencies:
       '@hono/node-server':
