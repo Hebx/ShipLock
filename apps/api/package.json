@@ -13,8 +13,10 @@
   "dependencies": {
     "@hono/node-server": "2.1.6",
     "@shiplock/github": "workspace:*",
+    "@shiplock/policy": "workspace:*",
     "@shiplock/scanner": "workspace:*",
     "@shiplock/shared": "workspace:*",
+    "@worldcoin/idkit-core": "4.6.0",
     "hono": "4.13.16",
     "zod": "4.6.7"
   },

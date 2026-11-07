@@ -10,6 +10,7 @@
     "typecheck": "next typegen && tsc --noEmit -p ."
   },
   "dependencies": {
+    "@worldcoin/idkit": "4.6.0",
     "next": "16.4.5",
     "react": "19.3.1",
     "react-dom": "19.3.1",
