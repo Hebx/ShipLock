@@ -17,7 +17,7 @@ Agent-paid independent code review, World ID human approval, and a GitHub merge 
 </p>
 
 <p>
-<a href="https://shiplock.vercel.app"><strong>Live demo</strong></a> ·
+<a href="https://shiplock-gamma.vercel.app"><strong>Live demo</strong></a> ·
 <a href="#-live-proof"><strong>Live proof</strong></a> ·
 <a href="#-how-to-use"><strong>Run it</strong></a> ·
 <a href="docs/ARCHITECTURE.md"><strong>Docs</strong></a>
@@ -98,14 +98,14 @@ These ran against real infrastructure. You can check every link yourself. The de
 
 For each transaction, the mirror node shows `SUCCESS`, the payer debited 1000 tinybar and the merchant credited 1000 tinybar. Payer `0.0.7304745`, merchant `0.0.9050506`, fee payer `0.0.7162784` (Blocky402). Full write-up: [Gate C payment evidence](docs/evidence/integration/gate-c-payment.md).
 
-- **World ID 4.0, production:** a real World App enrollment was verified server-side by World. The credential was **Selfie Check**, which is a lower assurance level than Orb, and ShipLock records which credential was used.
+- **World ID 4.0, production:** a real World App enrollment was verified server-side by World ([evidence](docs/evidence/world/production-enrollment.md)). The owner's identity matched only once Selfie Check was accepted, so the credential was most likely **Selfie Check**, a lower assurance level than Orb. ShipLock does not yet record the credential type.
 - **In progress:** the World ID approval of a specific SHA and the SHA-guarded merge. **No merge through ShipLock has happened yet.** Live status lives in [docs/PROGRESS.md](docs/PROGRESS.md).
 
 ## 🚀 How to use
 
 ### Try the live demo
 
-1. Open **https://shiplock.vercel.app** and **sign in with GitHub**.
+1. Open **https://shiplock-gamma.vercel.app** and **sign in with GitHub**.
 2. **Enroll World ID** with the World App on your phone.
 3. Open a **pull request review**: you see the exact head SHA, the findings, and the paid review with its HashScan link.
 4. **Approve with World ID.** The proof signs the operation hash shown on screen.

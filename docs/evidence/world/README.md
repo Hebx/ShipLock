@@ -1,6 +1,6 @@
 # World ID (IDKit) evidence — runbook
 
-Status: **no World evidence recorded yet.** Unit tests (stubbed World verify) are not evidence for this folder.
+Status: **production enrollment recorded** ([production-enrollment.md](production-enrollment.md)); approvals and merge not yet. Unit tests (stubbed World verify) are not evidence for this folder.
 
 ## Labeling (mandatory)
 
