@@ -15,6 +15,13 @@ Update this file whenever a milestone changes state. Use `Not started`, `In prog
 
 ## Change log
 
+### Cursor — `cursor/integration` — Hermes Gate D security fixes
+
+- Commit `ce01ba7` addresses M-1 through M-4 and L-6: safe GitHub permission ranking; uncertain/interrupted merge reconciliation without re-sending the merge; development-evidence merge refusal unless explicitly enabled; paid-review payer and job-time binding; and GitHub App identity enforcement for pinned required checks.
+- M-4 uses ShipLock-side payer and consensus-time checks only. Merchant quote confirmation keyed by a merchant-stored `quoteId` remains the agreed follow-up and requires a merchant change plus a later optional `PaidReviewResult.quoteId`.
+- Tests (unit; World, GitHub, mirror node and payment dependencies stubbed — **not live evidence**): shared 12, scanner 9, github 12, policy 11, x402 61, agent 11, api 77. Workspace typecheck passes.
+- M3 and M4 remain in progress and unverified until a live World approval and SHA-guarded GitHub merge produce evidence.
+
 ### Cursor — `cursor/integration` — agent wiring and live paid review through ShipLock
 
 - Merged Hermes PR #2 (`hermes/x402-contract-v2`) onto `cursor/product-gate`; one root lockfile, single `@x402/*` 2.30.0 and `@hiero-ledger/sdk` 2.90.1.
