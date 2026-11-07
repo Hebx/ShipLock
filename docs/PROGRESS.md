@@ -6,14 +6,24 @@
 | App foundation (DB, schemas, state machine, API, UI) | In progress — foundation tests pass | Cursor | `cursor/product-gate` | [app-foundation.md](evidence/app-foundation.md) §1 | — |
 | M1 paid x402 | Not started | Hermes | — | — | — |
 | M2 SHA-bound audit | In progress — scanner + SHA binding implemented; live read smoke only | Cursor | `cursor/product-gate` | [app-foundation.md](evidence/app-foundation.md) §2 (not M2 exit) | Disposable `Hebx/shiplock-demo-target` repo does not exist yet |
-| M3 Agent Pass | Not started | Cursor | — | — | World client registration (sandbox or production) |
-| M4 GitHub merge | Not started | Cursor | — | — | Demo repo + fine-grained token scoped to it |
+| M3 World ID (IDKit) + GitHub maintainer | In progress — implemented, unit-tested only (stubbed World verify); never run against World | Cursor | `cursor/product-gate` | runbook: [world/README.md](evidence/world/README.md) (no evidence yet) | World Developer Portal app values (`app_id`, `rp_id`, signing key) + staging action; GitHub OAuth App; cross-agent security review |
+| M4 GitHub merge | In progress — executor implemented, unit-tested against in-memory GitHub; no real merge | Cursor | `cursor/product-gate` | — | Demo repo + fine-grained token; live paid review (M1); cross-agent security review |
 | M5 evidence/demo | Not started | Joint | — | — | M1–M4 |
 | M6 optional | Not started | Joint | — | — | — |
 
 Update this file whenever a milestone changes state. Use `Not started`, `In progress`, `Blocked`, or `Verified` with evidence URL.
 
 ## Change log
+
+### Cursor — `cursor/product-gate` — World IDKit pivot, maintainer auth, paid-review acceptance, merge gate
+
+- Pivot from Agent Pass OIDC to **World IDKit 4.6.0** (Proof of Human, user presence where supported). Sponsor target: ETHGlobal Mumbai "Best Use of IDKit" (requirements recorded in `docs/IMPLEMENTATION_BRIEF.md`).
+- `packages/policy`: merge operation `v2` binds GitHub approver id/login, World environment and rp_id, paid-review evidence kind.
+- `packages/github`: collaborator permission, check runs, combined status, branch rules, SHA-guarded merge (`409` ⇒ head changed; timeout/5xx ⇒ outcome unknown).
+- `apps/api`: migration `002` (GitHub OAuth states, sessions, World enrollments, proof requests, session nullifiers; Agent Pass tables retired and open Agent Pass authorizations invalidated); GitHub OAuth sign-in + sessions + CSRF; World enrollment and exact-operation approval verified with World `/api/v4/verify/{rp_id}`; deny/cancel; paid-review acceptance with independent mirror-node check; merge executor with live pre-merge checks and reconcile. Unconfigured integrations return 503. Dev helper `simulate-paid-review` (simulated evidence, never mergeable).
+- `apps/web`: maintainer page (GitHub sign-in, World enrollment via `IDKitRequestWidget`), human checkpoint on the review page (`IDKitSessionWidget` over the operation hash, deny, merge, reconcile), session bar; staging labeled as simulator proof.
+- Tests (unit; World verify, mirror node and GitHub stubbed — **not live evidence**): shared 10, scanner 9, github 11, policy 10, api 73 = 113 passing. `pnpm typecheck` and `pnpm build:web` pass. Local smoke: API + web with integrations unconfigured return 503 / `no_session` through the web proxy.
+- Not run live: GitHub OAuth, World verify (staging or production), mirror-node lookup, any GitHub write.
 
 ### Cursor — `cursor/product-gate` — app foundation + start of M2
 

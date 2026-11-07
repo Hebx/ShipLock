@@ -27,11 +27,11 @@ A coding agent is assigned to fix an x402 payment validation edge case in a disp
 1. **Propose:** ShipLock reads the PR metadata and exact head SHA; labels it `requires paid review` because it modifies payment/signature logic.
 2. **Buy:** the coding agent discovers a scanner's published price, receives HTTP 402, checks its per-review spend cap, signs a Hedera testnet HBAR payment, and obtains a paid audit report. No human approved the micro-purchase.
 3. **Evaluate:** the scanner returns concrete line-numbered findings, rules version, source SHA, report digest, and an explicit `pass` / `block` / `inconclusive` outcome. The agent cannot set its own review status.
-4. **Authorize:** a maintainer enters a World ID Agent Pass step-up flow. A secure backend validates OIDC and session binding; the UI then displays the exact repo, PR, SHA, risks, and merge action. The maintainer separately clicks **Approve this revision**.
+4. **Authorize:** a maintainer signed in with GitHub (write permission checked live) opens the human checkpoint. The UI displays the exact repo, PR, SHA, review digest and merge action; the maintainer approves **this revision** with a fresh World ID proof (Proof of Human, user presence) whose signal is the operation hash. ShipLock's backend verifies the proof with World and checks it comes from the World ID enrolled to that GitHub account.
 5. **Execute:** the backend re-fetches head SHA and GitHub required-check status, verifies single-use authorization, then calls GitHub's merge API with that expected SHA. If the PR has changed, GitHub returns a conflict and no merge happens.
-6. **Prove:** the user sees the actual Hedera payment receipt, audit digest, validated-authentication status (without leaking identity tokens), and GitHub merged PR URL.
+6. **Prove:** the user sees the actual Hedera payment receipt, audit digest, the World ID verification status (no personal identifiers; staging proofs labeled as simulator proofs), and GitHub merged PR URL.
 
-**Adversarial replay:** After approval, the agent pushes another commit `def456…`. ShipLock rejects the stale approval, leaves the PR open, and requests a fresh paid audit and human authorization. If World authentication is denied or cancelled, the merge is also blocked.
+**Adversarial replay:** After approval, the agent pushes another commit `def456…`. ShipLock rejects the stale approval, leaves the PR open, and requests a fresh paid audit and human authorization. If the World ID approval is rejected or cancelled, or the maintainer denies, the merge is also blocked.
 
 *Note:* The sample PR number and SHA above are illustrations, not real deployed evidence.
 
@@ -49,8 +49,9 @@ As a maintainer, I want findings tied to a specific PR head SHA so I can see whi
 - Blocking or inconclusive findings cannot silently become `pass`.
 
 **US-03 — Authorize one merge**
-As an accountable maintainer, I want a fresh World ID authentication followed by explicit consent to merge that exact version so an agent can't infer my permission.
-- World OIDC state/nonce/PKCE and ID token validated server-side, with issuer/subject/freshness/assurance checks.
+As an accountable maintainer, I want to approve that exact version with a fresh World ID proof so an agent can't infer my permission or act as me.
+- GitHub sign-in identifies the maintainer; live repository permission is required. World ID proves a unique, present human and is enrolled to one GitHub account.
+- Every World proof is verified server-side with World (environment, single-use nonce, signal = operation hash, enrolled session, user presence, nullifier replay).
 - Approval is bound to repo, PR, SHA, operation, identity, expiry and consumed once.
 - Cancellation, mismatch or expiry blocks the action.
 
@@ -63,7 +64,7 @@ As a repo owner, I want the system to block merges if new commits arrive after a
 **US-05 — Inspect proofs**
 As a judge or reviewer, I want independently inspectable proof of the agent's paid request, protected approval path and result so the demo is credible.
 - Hedera HashScan tx link, real audit content, GitHub PR URL, and denial flow are available.
-- Simulated World credentials and local tests are clearly distinguished from real production identity assurance.
+- World staging/simulator proofs and local tests are clearly distinguished from real production World ID proofs.
 
 ## 6. Build milestones (no timeline)
 
@@ -72,7 +73,7 @@ As a judge or reviewer, I want independently inspectable proof of the agent's pa
 | M0. Repo research | Source/commit/version/license matrix for latest x402 SDK, Carpool, AutoVoyage, Turnstile, Hedera ref and Hedron | Verified baseline, not README assumptions |
 | M1. Payment | x402 402→signed HBAR→settlement→paid response | Real HashScan tx, no mock settlement |
 | M2. Review | Scanner and immutable audit receipt | Concrete findings tied to SHA and paid request |
-| M3. Human checkpoint | World Agent Pass OIDC and explicit approval | Validated backend auth, denied path prevents approval |
+| M3. Human checkpoint | World IDKit Proof of Human + GitHub sign-in + explicit approval | Server-verified World proofs, cancelled/denied path prevents approval |
 | M4. Merge gate | GitHub least-privilege app and expected SHA merge | One exact approved merge; changed SHA blocked |
 | M5. Evidence & reliability | Integration tests, logs, setup, demo | Reproducible pass and fail with links |
 | M6. Extensions | Required status check, HCS receipt, multiple review services | Optional until core evidence is complete |
@@ -94,15 +95,15 @@ As a judge or reviewer, I want independently inspectable proof of the agent's pa
 
 ## 9. Hackathon pitch — spoken version
 
-'AI coding agents can ship pull requests faster than small teams can review them. Existing CI catches many errors, but it does not automatically answer a different question: which human approved the exact version that was reviewed? ShipLock solves that handoff. An agent discovers an independent review API, pays for it automatically using x402 on Hedera, and gets a report bound to one commit. Before merging, the maintainer completes World ID Agent Pass authentication and explicitly approves that exact revision. If the agent changes the code afterward, approval is invalid and GitHub rejects the stale SHA. We can show a real paid review, a real approved merge, and a blocked changed-code attempt. Today it protects GitHub PRs; next it can protect deployments and package releases.'
+'AI coding agents can ship pull requests faster than small teams can review them. Existing CI catches many errors, but it does not automatically answer a different question: which human approved the exact version that was reviewed? ShipLock solves that handoff. An agent discovers an independent review API, pays for it automatically using x402 on Hedera, and gets a report bound to one commit. Before merging, the maintainer — signed in with GitHub — approves that exact revision with a fresh World ID proof of human. If the agent changes the code afterward, approval is invalid and GitHub rejects the stale SHA. We can show a real paid review, a real approved merge, and a blocked changed-code attempt. Today it protects GitHub PRs; next it can protect deployments and package releases.'
 
 ## 10. Sources and research
 
 - GitHub Octoverse 2026: https://github.blog/news-insights/octoverse/octoverse-commits-pushes-reach-new-highs-in-2026-as-developers-build-with-agents/
 - GitHub security tooling: https://github.blog/changelog/2025-10-28-copilot-coding-agent-now-automatically-validates-code-security-and-quality/
 - GitHub merge API expected SHA: https://docs.github.com/en/rest/pulls/pulls
-- World Agent Pass step-up: https://auth.world.org/docs/guides/step-up
-- World sandbox and testing: https://auth.world.org/docs/guides/testing
+- World IDKit: https://docs.world.org/world-id/idkit/integrate
+- World ID session proofs: https://docs.world.org/world-id/idkit/session-proofs
 - ETHGlobal Mumbai prizes: https://ethglobal.com/events/mumbai/prizes
 - Existing nearby project Commitment Issues: https://ethglobal.com/showcase/commitment-issues-y1t2h
 - Hedera winners: https://ethglobal.com/showcase/carpool-f4bez and https://ethglobal.com/showcase/turnstile-ovks1

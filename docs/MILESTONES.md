@@ -25,13 +25,16 @@ See `docs/IMPLEMENTATION_BRIEF.md` for detailed requirements. Never mark a miles
 - [ ] Bind report hash, rules version, repo, PR and SHA; payment fulfillment idempotent.
 - **Exit:** real repo PR and report links, test with a changed source SHA.
 
-## M3 — Official World Agent Pass
+## M3 — World ID (IDKit) proof of human + exact-SHA approval
 
-- [ ] App registered; OIDC authorization-code + PKCE + state + nonce working.
-- [ ] Backend validates signature, `iss`, `aud`, `nonce`, expiry, `(iss,sub)`, `acr`, `amr`, `auth_time`, session and requirement.
-- [ ] `max_age=0` fresh step-up for exact action; explicit separate approval, one-use with expiry.
-- [ ] Cancel/deny/expired/wrong identity blocked, showing protected action did not occur.
-- **Exit:** `docs/evidence/M3.md` with sanitized traces and debrief. Event fake identities must be labeled *test*.
+Policy: **Proof of Human, with a fresh user-presence check where supported.** A proof establishes humanness only; the maintainer must also be GitHub-authenticated with live repository write permission and explicitly approve the exact SHA.
+
+- [ ] World Developer Portal app registered (`app_id`, `rp_id`, server-only RP signing key); enrollment action created in staging (simulator) and production (real World App).
+- [ ] GitHub OAuth sign-in with single-use browser-bound state; server sessions with CSRF.
+- [ ] Enrollment: `IDKitRequestWidget` with `proof_of_human`, `session_id: "create"`, server-signed `rp_context`, server-generated signal; server verifies with World `/api/v4/verify/{rp_id}` and binds one World ID + World session to one GitHub account.
+- [ ] Approval: `IDKitSessionWidget` on the enrolled session, signal = operation hash; server verifies with World, checks nonce/session/signal/presence/environment, rejects replayed session nullifiers; one-use with expiry.
+- [ ] Cancel (`user_rejected`), deny, expired and wrong-session/identity paths blocked, showing the protected merge did not occur.
+- **Exit:** `docs/evidence/world/` with sanitized World verify responses for a successful enrollment + approval and at least one cancelled/rejected approval, plus the integration debrief. Simulator (staging) proofs must be labeled as development proofs, not real human verification. Unit tests with stubbed World verify do not count.
 
 ## M4 — Exact-SHA merge gate
 
@@ -42,9 +45,9 @@ See `docs/IMPLEMENTATION_BRIEF.md` for detailed requirements. Never mark a miles
 
 ## M5 — Evidence and presentation
 
-- [ ] `README` setup reproducible; tests cover payment, OIDC, report and merge failure paths.
+- [ ] `README` setup reproducible; tests cover payment, World ID proof, session, report and merge failure paths.
 - [ ] `docs/evidence/` separates real, staged, and simulated outcomes.
-- [ ] Submission has real x402 transaction, World validated flow, failed path, GitHub PR URL and source links.
+- [ ] Submission has real x402 transaction, server-verified World ID flow, failed path, GitHub PR URL and source links.
 - [ ] Integrations debrief: time to first success, friction, missing documentation/capability, biggest improvement.
 - **Exit:** recorded end-to-end demo and source checklist.
 

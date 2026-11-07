@@ -6,9 +6,9 @@ Applies to **Cursor**, **Hermes**, and any other agents operating in this reposi
 
 1. Build a distinct GitHub PR audit product, not a clone/fork of Hedron or an existing winner.
 2. Prove **standard x402 v2** on Hedera testnet end-to-end: HTTP 402 → signed payload → `/verify` → `/settle` → paid audit response → real transaction evidence. The buyer acts *autonomously* within a configured spend cap.
-3. Use official **World ID Agent Pass OIDC**, server-side validation, and a separate, one-use, exact-action approval for merge. Never treat a client callback or ID token alone as consent.
+3. Use official **World IDKit 4.x** with server-side verification (`POST /api/v4/verify/{rp_id}`) for every proof. A World ID proof establishes a unique human only: merge authority additionally requires a GitHub-authenticated maintainer with live repository write permission, and a separate, one-use World ID approval whose signal is the exact operation hash, from the World session enrolled to that maintainer. Never treat a client callback, widget `onSuccess` or client-reported `success:true` as consent. RP signatures are created server-side only.
 4. Bind scanner outcome and human approval to repo, PR, current head SHA, review content digest, action, identity and expiry. GitHub merge request must include expected SHA and must reject changes.
-5. Demo one successful merge plus at least one changed-SHA and one cancelled/denied World authentication with no merge.
+5. Demo one successful merge plus at least one changed-SHA and one cancelled/rejected World ID approval with no merge. Label World staging/simulator proofs as development proofs, never as real human verification.
 
 ## Required research first
 

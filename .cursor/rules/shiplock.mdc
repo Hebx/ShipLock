@@ -3,7 +3,7 @@ description: ShipLock universal safety, research and delivery contract
 alwaysApply: true
 ---
 Read `AGENTS.md`, `docs/SECURITY.md`, and `docs/MILESTONES.md` before editing.
-Respect milestone proof gates. Treat actual transactions, OIDC validation and SHA-guarded merge as separate, verifiable operations.
-Never commit private keys or credentials; never let a mocked facilitator stand in for a real x402 proof.
+Respect milestone proof gates. Treat actual transactions, server-side World ID proof verification and SHA-guarded merge as separate, verifiable operations.
+Never commit private keys or credentials; never let a mocked facilitator stand in for a real x402 proof, or a stubbed World verify for a real World ID proof.
 Before implementation audit the official SDK plus recent Hedera x402 winner code specified in `docs/RESEARCH_SOURCES.md`.
 Use `docs/COORDINATION.md` for handoffs with Hermes. Record changes and tests in `docs/PROGRESS.md`.

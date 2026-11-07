@@ -39,9 +39,18 @@
 
 ## Identity and merge gate
 
-- https://auth.world.org/docs/guides/oidc
-- https://auth.world.org/docs/guides/step-up
-- https://auth.world.org/docs/guides/testing
+World ID via **IDKit 4.x** (pinned `@worldcoin/idkit-core` / `@worldcoin/idkit` 4.6.0). Earlier Agent Pass OIDC sources are superseded for ShipLock.
+
+- https://docs.world.org/world-id/idkit/integrate — RP signature server-side, `POST /api/v4/verify/{rp_id}`, assert `environment`, nullifier storage.
+- https://docs.world.org/world-id/idkit/session-proofs — enrollment = uniqueness request with action + `session_id: "create"`; later session proofs omit the action, must match the saved `session_id`; `session_nullifier` is per-proof replay protection; never silently replace a saved session.
+- https://docs.world.org/world-id/idkit/react — `IDKitRequestWidget` / `IDKitSessionWidget`.
+- https://docs.world.org/world-id/idkit/signatures — RP signature spec.
+- https://docs.world.org/world-id/idkit/error-codes — `user_rejected`, `user_presence_failed`, `failed_by_host_app`, …
+- https://docs.world.org/world-id/idkit/verification-flows
+- https://docs.world.org/world-id/credentials/1 — Proof of Human credential.
+- https://docs.world.org/api-reference/developer-portal/verify — verify endpoint reference.
+- https://simulator.worldcoin.org/id/0x18310f83 — World ID Simulator (staging only; development proofs).
+- https://ethglobal.com/events/mumbai/prizes — "Best Use of IDKit" requirements (recorded in `docs/IMPLEMENTATION_BRIEF.md`).
 - https://docs.github.com/en/rest/pulls/pulls — merge API exact `sha` requirement.
 
 ## Mandatory M0 evidence table
