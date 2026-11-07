@@ -10,7 +10,7 @@ import { checkHederaTransfer } from "./mirror-node.ts";
 import { toReviewJob, syncPullRequest } from "./review-service.ts";
 import { getJob, getReceipt, newId, recordEvent, StaleHeadError, transitionJob, type ReviewJobRow } from "./store.ts";
 
-const BodySchema = z.strictObject({ adapterId: z.string().regex(/^[A-Za-z0-9._:-]{1,100}$/), result: z.unknown() });
+const BodySchema = z.strictObject({ adapterId: z.string().regex(/^[A-Za-z0-9._:/@-]{1,100}$/), result: z.unknown() });
 
 const now = () => new Date().toISOString();
 

@@ -208,7 +208,7 @@ export function setup(config: AppConfig = testConfig()) {
   };
 
   const submitPaidReview = (jobId: string, result: unknown = paidResult(jobId)) =>
-    call("POST", `/api/reviews/${jobId}/paid-review`, { body: { adapterId: "test-adapter", result }, agent: true });
+    call("POST", `/api/reviews/${jobId}/paid-review`, { body: { adapterId: "hermes-x402-hedera/2.30.0", result }, agent: true });
 
   const activeEnrollmentFor = (session: Session) =>
     db.prepare("SELECT 1 FROM world_enrollments e JOIN sessions s ON s.github_user_id = e.github_user_id WHERE s.id_hash = ?").get(sha256(session.cookie.split("=")[1]!));

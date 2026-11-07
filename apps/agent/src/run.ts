@@ -68,6 +68,7 @@ export interface AgentDeps {
 export type RunOutcome =
   | { kind: "accepted"; jobId: string; transactionId: string; jobState?: string }
   | { kind: "ledger_pending"; jobId: string; transactionId: string }
+  | { kind: "submit_failed"; jobId: string; transactionId: string; httpStatus: number; reasons: string[] }
   | { kind: "rejected"; jobId: string; transactionId: string; httpStatus: number; reasons: string[] }
   | { kind: "not_awaiting_review"; jobId: string; jobState: string }
   | { kind: "needs_reconcile"; jobId: string; transactionId: string; status: string; detail: string | null }
@@ -145,8 +146,9 @@ async function submit(deps: AgentDeps, jobId: string, transactionId: string, res
       if (i < attempts - 1) await sleep(deps.submitDelayMs ?? 5_000);
       continue;
     }
-    if (res.httpStatus >= 500) return { kind: "ledger_pending", jobId, transactionId };
     const reasons = res.body.reasons ?? [res.body.error ?? `http_${res.httpStatus}`];
+    // Only 409/422 are ShipLock's verdict on this review; anything else leaves the paid result resubmittable.
+    if (res.httpStatus !== 409 && res.httpStatus !== 422) return { kind: "submit_failed", jobId, transactionId, httpStatus: res.httpStatus, reasons };
     deps.ledger.update(jobId, "rejected", { detail: reasons.join("; ").slice(0, 500) });
     return { kind: "rejected", jobId, transactionId, httpStatus: res.httpStatus, reasons };
   }

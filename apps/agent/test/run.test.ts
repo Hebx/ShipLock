@@ -137,6 +137,15 @@ describe("runReview", () => {
     expect(t.submitted).toHaveLength(1);
   });
 
+  it("keeps a paid result resubmittable when ShipLock rejects the request itself", async () => {
+    const t = setup({ responses: [{ httpStatus: 400, body: { error: "invalid_request" } }] });
+    expect(await runReview(t.deps, ref)).toMatchObject({ kind: "submit_failed", httpStatus: 400 });
+    expect(t.ledger.get("job_1")!.status).toBe("paid");
+    await runReview(t.deps, ref);
+    expect(t.inputs).toHaveLength(1);
+    expect(t.submitted).toHaveLength(2);
+  });
+
   it("does not buy a review for a job that is not awaiting one", async () => {
     const t = setup({ job: { state: "stale" } });
     expect(await runReview(t.deps, ref)).toMatchObject({ kind: "not_awaiting_review", jobState: "stale" });

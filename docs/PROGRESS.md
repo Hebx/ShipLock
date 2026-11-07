@@ -4,16 +4,24 @@
 |---|---|---|---|---|---|
 | M0 research | Verified | Hermes | `hermes/hedera-x402` | [RESEARCH_NOTES](RESEARCH_NOTES.md) | — |
 | App foundation (DB, schemas, state machine, API, UI) | In progress — foundation tests pass | Cursor | `cursor/product-gate` | [app-foundation.md](evidence/app-foundation.md) §1 | — |
-| M1 paid x402 | Verified (payment subsystem, live testnet); app integration pending | Hermes | `hermes/hedera-x402` (PR #1) | [M1 evidence](evidence/payment/M1.md), tx `0.0.7162784@1794012935.145851264` | Adapter must emit Cursor's v2 `PaidReviewResult` (in progress: `hermes/x402-contract-v2`) |
-| M2 SHA-bound audit | In progress — scanner + SHA binding implemented; live read smoke only | Cursor | `cursor/product-gate` | [app-foundation.md](evidence/app-foundation.md) §2 (not M2 exit) | Disposable `Hebx/shiplock-demo-target` repo does not exist yet |
-| M3 World ID (IDKit) + GitHub maintainer | In progress — implemented, unit-tested only (stubbed World verify); never run against World | Cursor | `cursor/product-gate` | runbook: [world/README.md](evidence/world/README.md) (no evidence yet) | World Developer Portal app values (`app_id`, `rp_id`, signing key) + staging action; GitHub OAuth App; cross-agent security review |
-| M4 GitHub merge | In progress — executor implemented, unit-tested against in-memory GitHub; no real merge | Cursor | `cursor/product-gate` | — | Demo repo + fine-grained token; live paid review (M1); cross-agent security review |
+| M1 paid x402 | Verified (live testnet) and integrated into the app | Hermes (adapter), Cursor (wiring) | `cursor/integration` | [M1 evidence](evidence/payment/M1.md), [Gate C payment](evidence/integration/gate-c-payment.md) | Merchant not publicly hosted |
+| M2 SHA-bound audit | Verified (live GitHub read on the demo repo) | Cursor | `5e8133c` | [M2](evidence/github/M2.md) | — |
+| M3 World ID (IDKit) + GitHub maintainer | In progress — implemented, unit-tested only; World Portal app, staging action and GitHub OAuth App configured (credentials validated, no proof verified yet) | Cursor | `cursor/integration` | runbook: [world/README.md](evidence/world/README.md) (no evidence yet) | Simulator enrollment + approval run in a browser; Hermes Gate D review |
+| M4 GitHub merge | In progress — executor implemented, unit-tested against in-memory GitHub; no real merge | Cursor | `cursor/integration` | — | M3 approval; Hermes Gate D review; demo repo has no branch protection (see M2) |
 | M5 evidence/demo | Not started | Joint | — | — | M1–M4 |
 | M6 optional | Not started | Joint | — | — | — |
 
 Update this file whenever a milestone changes state. Use `Not started`, `In progress`, `Blocked`, or `Verified` with evidence URL.
 
 ## Change log
+
+### Cursor — `cursor/integration` — agent wiring and live paid review through ShipLock
+
+- Merged Hermes PR #2 (`hermes/x402-contract-v2`) onto `cursor/product-gate`; one root lockfile, single `@x402/*` 2.30.0 and `@hiero-ledger/sdk` 2.90.1.
+- `apps/agent`: `review` (autonomous buyer: ShipLock job → `createReviewPurchaser` within the cap → paid-review submission, per-job payment ledger written before send, never re-pays signed/uncertain/paid-unfulfilled) and `merchant` (`createAuditMerchant` + scanner auditor).
+- Mirror check now requires the payer's net debit to equal the price exactly (Hermes review note). `adapterId` accepts `/` and `@`.
+- Live: PR #1 accepted (`paid_review_confirmed`), PR #2 accepted and blocked (`review_blocked`); see [Gate C payment](evidence/integration/gate-c-payment.md).
+- Tests: shared 12, scanner 9, github 11, policy 11, x402 61, agent 11, api 73.
 
 ### Cursor — `cursor/product-gate` — World IDKit pivot, maintainer auth, paid-review acceptance, merge gate
 
