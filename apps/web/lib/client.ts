@@ -25,6 +25,9 @@ export async function callApi<T>(path: string, init: { method?: "GET" | "POST"; 
 
 export const loadSession = () => callApi<SessionInfo>("/api/session");
 
+/** World ID 4.0 unique-human credentials the API accepts (any one). */
+export const HUMAN_CREDENTIALS = ["proof_of_human", "passport", "mnc"] as const;
+
 export const WORLD_ENV_LABEL = {
   production: "World ID (production)",
   staging: "World staging simulator — development proof, not real human verification",

@@ -44,7 +44,9 @@ describe("checkSessionResult (unit)", () => {
     expect(checkSessionResult(sessionShape({ user_presence_completed: false }), expect_)).toEqual({ ok: false, reason: "user_presence_missing" });
     expect(checkSessionResult(sessionShape({ user_presence_completed: undefined }), expect_)).toEqual({ ok: false, reason: "user_presence_missing" });
     expect(checkSessionResult(sessionShape({ user_presence_completed: undefined }), { ...expect_, requireUserPresence: false }).ok).toBe(true);
-    expect(checkSessionResult(sessionShape({}, { identifier: "selfie", issuer_schema_id: 11 }), expect_)).toEqual({ ok: false, reason: "credential_not_proof_of_human" });
+    expect(checkSessionResult(sessionShape({}, { identifier: "selfie", issuer_schema_id: 11 }), expect_)).toEqual({ ok: false, reason: "credential_not_accepted" });
+    expect(checkSessionResult(sessionShape({}, { identifier: "proof_of_human", issuer_schema_id: 2 }), expect_)).toEqual({ ok: false, reason: "credential_not_accepted" });
+    expect(checkSessionResult(sessionShape({}, { identifier: "passport", issuer_schema_id: 9 }), expect_).ok).toBe(true);
     expect(checkSessionResult(sessionShape({ action: "merge" }), expect_)).toEqual({ ok: false, reason: "malformed_idkit_result" });
     expect(checkSessionResult(sessionShape({ protocol_version: "3.0" }), expect_)).toEqual({ ok: false, reason: "malformed_idkit_result" });
     expect(checkSessionResult({ success: true }, expect_)).toEqual({ ok: false, reason: "malformed_idkit_result" });

@@ -4,8 +4,12 @@ import { signRequest } from "@worldcoin/idkit-core/signing";
 import { z } from "zod";
 import type { WorldConfig } from "./config.ts";
 
-/** `issuer_schema_id` of the World ID 4.0 Proof of Human credential. */
-const PROOF_OF_HUMAN = { identifier: "proof_of_human", issuerSchemaId: 1 } as const;
+/**
+ * World ID 4.0 unique-human credentials ShipLock accepts. Only Proof of Human has a documented
+ * issuer schema id (1); World verify binds the others to their schema. Selfie Check is excluded.
+ */
+const HUMAN_CREDENTIALS = new Set(["proof_of_human", "passport", "mnc"]);
+const PROOF_OF_HUMAN_SCHEMA_ID = 1;
 const VERIFY_TIMEOUT_MS = 10_000;
 
 export interface RpContext {
@@ -107,7 +111,8 @@ function checkCommon(
   if (r.environment !== expect.environment) return "environment_mismatch";
   const expectedSignal = signalHashFor(expect.signal);
   for (const item of r.responses) {
-    if (item.identifier !== PROOF_OF_HUMAN.identifier || item.issuer_schema_id !== PROOF_OF_HUMAN.issuerSchemaId) return "credential_not_proof_of_human";
+    if (!HUMAN_CREDENTIALS.has(item.identifier)) return "credential_not_accepted";
+    if (item.identifier === "proof_of_human" && item.issuer_schema_id !== PROOF_OF_HUMAN_SCHEMA_ID) return "credential_not_accepted";
     if (!item.signal_hash || canonicalFieldElement(item.signal_hash) !== expectedSignal) return "signal_mismatch";
   }
   if (expect.requireUserPresence && r.user_presence_completed !== true) return "user_presence_missing";

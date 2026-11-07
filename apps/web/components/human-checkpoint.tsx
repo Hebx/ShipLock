@@ -1,11 +1,11 @@
 "use client";
 
-import { CredentialRequest, IDKitSessionWidget, type IDKitResultSession } from "@worldcoin/idkit";
+import { any, CredentialRequest, IDKitSessionWidget, type IDKitResultSession } from "@worldcoin/idkit";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import type { ApprovalRequest, Authorization, MergeAttempt, PaidReview, ReleaseState, SessionInfo } from "@/lib/api";
-import { callApi, loadSession, WORLD_ENV_LABEL } from "@/lib/client";
+import { callApi, HUMAN_CREDENTIALS, loadSession, WORLD_ENV_LABEL } from "@/lib/client";
 import { Card, EvidenceTag, Sha } from "./ui";
 
 const AUTHORIZABLE: ReleaseState[] = ["paid_review_confirmed", "denied", "expired"];
@@ -201,7 +201,7 @@ export function HumanCheckpoint({ jobId, jobState, paidReview, authorization, me
           existing_session_id={proof.existing_session_id}
           require_user_presence={proof.require_user_presence}
           action_description="Approve one ShipLock merge of the exact commit shown"
-          constraints={CredentialRequest("proof_of_human", { signal: proof.signal })}
+          constraints={any(...HUMAN_CREDENTIALS.map((c) => CredentialRequest(c, { signal: proof.signal })))}
           handleVerify={submitApproval}
           onSuccess={() => {
             setProof(null);

@@ -1,9 +1,9 @@
 "use client";
 
-import { CredentialRequest, IDKitRequestWidget, type IDKitResult } from "@worldcoin/idkit";
+import { any, CredentialRequest, IDKitRequestWidget, type IDKitResult } from "@worldcoin/idkit";
 import { useCallback, useEffect, useState } from "react";
 import type { EnrollmentRequest, SessionInfo } from "@/lib/api";
-import { callApi, loadSession, WORLD_ENV_LABEL } from "@/lib/client";
+import { callApi, HUMAN_CREDENTIALS, loadSession, WORLD_ENV_LABEL } from "@/lib/client";
 import { Card, EvidenceTag } from "./ui";
 
 export function MaintainerPanel({ loginMessage }: { loginMessage?: string }) {
@@ -109,7 +109,7 @@ export function MaintainerPanel({ loginMessage }: { loginMessage?: string }) {
           allow_legacy_proofs={false}
           session_id="create"
           require_user_presence={request.require_user_presence}
-          constraints={CredentialRequest("proof_of_human", { signal: request.signal })}
+          constraints={any(...HUMAN_CREDENTIALS.map((c) => CredentialRequest(c, { signal: request.signal })))}
           handleVerify={completeEnrollment}
           onSuccess={async () => {
             setRequest(null);
