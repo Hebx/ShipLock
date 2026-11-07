@@ -1,0 +1,69 @@
+{
+  "evidenceKind": "live-github-read",
+  "analyzedAt": "2026-11-07T01:26:14.188Z",
+  "repository": "Hebx/shiplock-demo-target",
+  "repositoryId": 1448904918,
+  "pullNumber": 2,
+  "headSha": "67969975c4a7d2c3e9c36b77e1adf9eee180a97d",
+  "baseSha": "10143ffa2cb17fc32ce44c69b3913f8caba462ae",
+  "scannerVersion": "shiplock-deterministic/0.1.0",
+  "diffSha256": "61fec8a240536b852edd9b1df55c1dcd4b1f6a61b82fa7b31b2b8b1470a749c4",
+  "reportSha256": "049efd7419b6ca72c3f10a0a24dd2d8838eb1a8c5943c9aedbd50a0aa446518a",
+  "conclusion": "block",
+  "stats": {
+    "filesChanged": 2,
+    "additions": 20,
+    "deletions": 0,
+    "binaryFiles": 0
+  },
+  "findings": [
+    {
+      "ruleId": "SL-CI-PR-TARGET",
+      "severity": "critical",
+      "file": ".github/workflows/preview.yml",
+      "line": 4,
+      "description": "Workflow uses pull_request_target (runs with base-repo secrets)",
+      "evidence": "on: pull_request_target"
+    },
+    {
+      "ruleId": "SL-CI-WORKFLOW-CHANGED",
+      "severity": "high",
+      "file": ".github/workflows/preview.yml",
+      "description": "CI workflow added"
+    },
+    {
+      "ruleId": "SL-CI-WRITE-ALL",
+      "severity": "high",
+      "file": ".github/workflows/preview.yml",
+      "line": 6,
+      "description": "Workflow grants write-all token permissions",
+      "evidence": "permissions: write-all"
+    },
+    {
+      "ruleId": "SL-CI-SCRIPT-INJECTION",
+      "severity": "high",
+      "file": ".github/workflows/preview.yml",
+      "line": 13,
+      "description": "Untrusted PR/issue field interpolated into a workflow expression",
+      "evidence": "run: echo \"${{ github.event.pull_request.title }}\""
+    },
+    {
+      "ruleId": "SL-EXEC-CHILD-PROCESS",
+      "severity": "medium",
+      "file": "src/run.ts",
+      "line": 3,
+      "description": "Process execution API introduced",
+      "evidence": "import { execSync } from \"child_process\";"
+    },
+    {
+      "ruleId": "SL-EXEC-CHILD-PROCESS",
+      "severity": "medium",
+      "file": "src/run.ts",
+      "line": 6,
+      "description": "Process execution API introduced",
+      "evidence": "return execSync(userInput).toString();"
+    }
+  ],
+  "jobId": "job_fbb2d657a15343f4a8dd3037002678a1",
+  "jobState": "review_pending"
+}

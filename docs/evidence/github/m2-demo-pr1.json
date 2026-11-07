@@ -1,0 +1,22 @@
+{
+  "evidenceKind": "live-github-read",
+  "analyzedAt": "2026-11-07T01:26:11.558Z",
+  "repository": "Hebx/shiplock-demo-target",
+  "repositoryId": 1448904918,
+  "pullNumber": 1,
+  "headSha": "d0cbdfd3cc1dddb80cbc657b0dbe52abb7d1b0cf",
+  "baseSha": "10143ffa2cb17fc32ce44c69b3913f8caba462ae",
+  "scannerVersion": "shiplock-deterministic/0.1.0",
+  "diffSha256": "e6ec27c0e888101fd3e8c9355975c2d8ce2ef935e9f6f4224f65b6c2eda0023c",
+  "reportSha256": "ca41051e5fe5f497401ac44299662d3ba94d8546e85fa5c2555488194b3a56fc",
+  "conclusion": "pass",
+  "stats": {
+    "filesChanged": 2,
+    "additions": 6,
+    "deletions": 0,
+    "binaryFiles": 0
+  },
+  "findings": [],
+  "jobId": "job_67dd99a21f3143e6ac7bfcccd7ac7347",
+  "jobState": "review_pending"
+}
