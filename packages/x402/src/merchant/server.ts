@@ -1,7 +1,7 @@
 /**
  * Paid /audit merchant. Standard x402 v2 over HTTP:
  *
- *   GET /audit?jobId&repo&sha[&pr]            -> 402 + PAYMENT-REQUIRED (fresh immutable quote)
+ *   GET /audit?jobId&repoId&repo&pr&base&head&scanner  -> 402 + PAYMENT-REQUIRED (fresh immutable quote)
  *   GET /audit?... + PAYMENT-SIGNATURE         -> verify -> settle -> mirror confirm -> 200 + PAYMENT-RESPONSE
  *
  * Invariants (docs/SECURITY.md):
@@ -16,10 +16,11 @@ import { decodePaymentSignatureHeader, encodePaymentRequiredHeader, encodePaymen
 import type { PaymentPayload, PaymentRequirements, SettleResponse } from "@x402/core/types";
 import { ExactHederaScheme } from "@x402/hedera/exact/server";
 import { extractTransactionFromPayload, inspectHederaTransaction, HBAR_ASSET_ID } from "@x402/hedera";
-import { canonicalEqual, canonicalJson, sha256Hex, ENTITY_RE, HEX_SHA_RE, REPO_RE, UINT_RE } from "../canonical.ts";
+import { ReviewJobSchema, type ReviewJob } from "@shiplock/shared";
+import { canonicalEqual, canonicalJson, sha256Hex, ENTITY_RE } from "../canonical.ts";
 import { resolveHederaCapability, type HederaCapability, type HederaNetwork } from "../capabilities.ts";
 import { assertHbarTransfer, validStartSeconds, waitForMirror, type MirrorClient } from "../mirror.ts";
-import { reportDigest, type Auditor, type AuditReport, type PaidAuditBody } from "../audit.ts";
+import { reportDigest, type Auditor, type PaidAuditBody } from "../audit.ts";
 import { MerchantStore, type QuoteRow } from "./store.ts";
 
 /** Hedera rejects a transaction once validStart + validDuration (<=180s) passes. */
@@ -37,6 +38,7 @@ export interface MerchantConfig {
   quoteTtlSeconds?: number;
   mirrorTimeoutMs?: number;
   repoAllowlist?: string[];
+  vendorId?: string;
   now?: () => number;
   log?: (event: string, data: Record<string, unknown>) => void;
 }
@@ -68,7 +70,7 @@ export async function createAuditMerchant(cfg: MerchantConfig): Promise<Merchant
   app.get("/audit", async (c) => {
     const params = parseParams(c);
     if ("error" in params) return c.json({ error: params.error }, 400);
-    if (cfg.repoAllowlist && !cfg.repoAllowlist.includes(params.repository)) {
+    if (cfg.repoAllowlist && !cfg.repoAllowlist.some((r) => r.toLowerCase() === params.repository.toLowerCase())) {
       return c.json({ error: "repository_not_allowlisted" }, 403);
     }
 
@@ -95,7 +97,7 @@ export async function createAuditMerchant(cfg: MerchantConfig): Promise<Merchant
       return c.json({ error: "quote_already_fulfilled" }, 409);
     }
 
-    if (quote.jobId !== params.jobId || quote.repository !== params.repository || quote.headSha !== params.headSha || quote.pullNumber !== params.pullNumber) {
+    if (!sameJob(quote, params)) {
       return c.json({ error: "quote_resource_mismatch" }, 400);
     }
 
@@ -199,22 +201,30 @@ export async function createAuditMerchant(cfg: MerchantConfig): Promise<Merchant
   async function fulfil(c: Context, quote: QuoteRow, stored: PaymentRequirements, txId: string, settle: SettleResponse | null) {
     const prior = store.getFulfillment(quote.quoteId);
     if (prior) return respondPaid(c, JSON.parse(prior.bodyJson) as PaidAuditBody, prior.txId);
-    let partial;
+    const job = jobOf(quote);
+    let report;
     try {
-      partial = await cfg.auditor({ jobId: quote.jobId, repository: quote.repository, pullNumber: quote.pullNumber, headSha: quote.headSha });
+      report = await cfg.auditor(job);
     } catch (err) {
       // Paid; audit generation failed. Payment stays settled; the same payload can retry fulfilment.
       log("audit_error", { quoteId: quote.quoteId, txId, error: errMsg(err) });
       return c.json({ error: "audit_generation_failed_paid", transactionId: txId, retry: "resend the same PAYMENT-SIGNATURE" }, 503);
     }
-    const report: AuditReport = {
-      jobId: quote.jobId,
-      repository: quote.repository,
-      pullNumber: quote.pullNumber,
-      headSha: quote.headSha,
-      ...partial,
-    };
+    // The auditor may not describe a different revision than the one that was paid for.
+    if (
+      report.repositoryId !== job.repositoryId ||
+      report.repository.toLowerCase() !== job.repository.toLowerCase() ||
+      report.pullNumber !== job.pullNumber ||
+      report.headSha !== job.headSha ||
+      report.baseSha !== job.baseSha ||
+      report.scannerVersion !== job.scannerVersion
+    ) {
+      log("audit_binding_mismatch", { quoteId: quote.quoteId, txId });
+      return c.json({ error: "audit_binding_mismatch_paid", transactionId: txId }, 503);
+    }
     const body: PaidAuditBody = {
+      jobId: quote.jobId,
+      vendorId: cfg.vendorId ?? "shiplock-x402-audit",
       report,
       reportSha256: reportDigest(report),
       payment: { network: stored.network, transactionId: txId, asset: stored.asset, amount: stored.amount, payTo: stored.payTo, quoteId: quote.quoteId },
@@ -227,7 +237,6 @@ export async function createAuditMerchant(cfg: MerchantConfig): Promise<Merchant
       return c.json({ error: "quote_already_fulfilled" }, 409);
     }
     log("fulfilled", { quoteId: quote.quoteId, txId, reportSha256: body.reportSha256 });
-    void settle;
     return respondPaid(c, body, txId);
   }
 
@@ -258,7 +267,7 @@ export async function createAuditMerchant(cfg: MerchantConfig): Promise<Merchant
       payTo: cfg.payTo,
       price: { asset: HBAR_ASSET_ID, amount: cfg.priceTinybar.toString() },
       maxTimeoutSeconds: ttl,
-      extra: { quoteId, headSha: params.headSha, repository: params.repository },
+      extra: { quoteId, repositoryId: params.repositoryId, repository: params.repository, pullNumber: params.pullNumber, baseSha: params.baseSha, headSha: params.headSha, scannerVersion: params.scannerVersion },
     });
     if (!requirements) throw new Error("no payment requirements built");
     if (requirements.extra.feePayer !== capability.feePayer) throw new Error("fee payer drifted from /supported capability");
@@ -266,9 +275,12 @@ export async function createAuditMerchant(cfg: MerchantConfig): Promise<Merchant
     store.insertQuote({
       quoteId,
       jobId: params.jobId,
+      repositoryId: params.repositoryId,
       repository: params.repository,
-      headSha: params.headSha,
       pullNumber: params.pullNumber,
+      headSha: params.headSha,
+      baseSha: params.baseSha,
+      scannerVersion: params.scannerVersion,
       requirementsJson: JSON.stringify(requirements),
       resourceUrl,
       createdAt,
@@ -276,7 +288,7 @@ export async function createAuditMerchant(cfg: MerchantConfig): Promise<Merchant
     });
     const paymentRequired = await resourceServer.createPaymentRequiredResponse(
       [requirements],
-      { url: resourceUrl, description: `ShipLock code review of ${params.repository}@${params.headSha}`, mimeType: "application/json", serviceName: "shiplock-audit" },
+      { url: resourceUrl, description: `ShipLock code review of ${params.repository}#${params.pullNumber} ${params.baseSha}...${params.headSha}`, mimeType: "application/json", serviceName: "shiplock-audit" },
       error,
     );
     c.header("PAYMENT-REQUIRED", encodePaymentRequiredHeader(paymentRequired));
@@ -288,23 +300,52 @@ export async function createAuditMerchant(cfg: MerchantConfig): Promise<Merchant
   return { app, store, capability };
 }
 
-interface Params {
-  jobId: string;
-  repository: string;
-  headSha: string;
-  pullNumber: number | null;
+type Params = ReviewJob;
+
+/** Query -> ReviewJob, validated with the shared schema (40-hex lowercase SHAs, positive ints). */
+export function parseParams(c: Context): Params | { error: string } {
+  const q = (k: string) => c.req.query(k);
+  const int = (v: string | undefined) => (v !== undefined && /^[1-9][0-9]{0,15}$/.test(v) ? Number(v) : NaN);
+  const parsed = ReviewJobSchema.safeParse({
+    jobId: q("jobId"),
+    repositoryId: int(q("repoId")),
+    repository: q("repo"),
+    pullNumber: int(q("pr")),
+    baseSha: q("base"),
+    headSha: q("head"),
+    scannerVersion: q("scanner"),
+  });
+  if (!parsed.success) return { error: `invalid_job:${parsed.error.issues.map((i) => i.path.join(".")).join(",")}` };
+  return parsed.data;
 }
 
-function parseParams(c: Context): Params | { error: string } {
-  const jobId = c.req.query("jobId") ?? "";
-  const repository = c.req.query("repo") ?? "";
-  const headSha = (c.req.query("sha") ?? "").toLowerCase();
-  const pr = c.req.query("pr");
-  if (!/^[A-Za-z0-9_.:-]{1,128}$/.test(jobId)) return { error: "invalid_job_id" };
-  if (!REPO_RE.test(repository)) return { error: "invalid_repo" };
-  if (!HEX_SHA_RE.test(headSha)) return { error: "invalid_sha" };
-  if (pr !== undefined && (!UINT_RE.test(pr) || pr === "0")) return { error: "invalid_pr" };
-  return { jobId, repository, headSha, pullNumber: pr === undefined ? null : Number(pr) };
+/** Build the canonical review URL for a job (used by the buyer and by Cursor's API). */
+export function auditUrl(baseUrl: string, job: ReviewJob): string {
+  const u = new URL(`${baseUrl.replace(/\/+$/, "")}/audit`);
+  u.searchParams.set("jobId", job.jobId);
+  u.searchParams.set("repoId", String(job.repositoryId));
+  u.searchParams.set("repo", job.repository);
+  u.searchParams.set("pr", String(job.pullNumber));
+  u.searchParams.set("base", job.baseSha);
+  u.searchParams.set("head", job.headSha);
+  u.searchParams.set("scanner", job.scannerVersion);
+  return u.toString();
+}
+
+function jobOf(q: QuoteRow): ReviewJob {
+  return { jobId: q.jobId, repositoryId: q.repositoryId, repository: q.repository, pullNumber: q.pullNumber, headSha: q.headSha, baseSha: q.baseSha, scannerVersion: q.scannerVersion };
+}
+
+function sameJob(q: QuoteRow, p: Params): boolean {
+  return (
+    q.jobId === p.jobId &&
+    q.repositoryId === p.repositoryId &&
+    q.repository === p.repository &&
+    q.pullNumber === p.pullNumber &&
+    q.headSha === p.headSha &&
+    q.baseSha === p.baseSha &&
+    q.scannerVersion === p.scannerVersion
+  );
 }
 
 function safeTxId(payload: PaymentPayload): string | null {

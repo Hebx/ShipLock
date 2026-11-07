@@ -1,32 +1,13 @@
 /**
- * Paid audit document shape shared by merchant and buyer.
- * `reportSha256` = sha256(canonicalJson(report)); the buyer recomputes it, never trusts it.
+ * Paid audit document. The report IS Cursor's canonical `ReviewReport` (packages/shared), so
+ * ShipLock can recompute `reportSha256` from the same SHA-pinned diff and compare byte for byte.
  */
-import type { ReviewFinding } from "../../shared/src/contracts.ts";
-import { canonicalJson, sha256Hex } from "./canonical.ts";
-
-export interface AuditJob {
-  jobId: string;
-  repository: string;
-  pullNumber: number | null;
-  headSha: string;
-}
-
-export interface AuditReport {
-  jobId: string;
-  repository: string;
-  pullNumber: number | null;
-  headSha: string;
-  vendorId: string;
-  scannerVersion: string;
-  filesScanned: number;
-  findings: ReviewFinding[];
-  verdict: "pass" | "block" | "inconclusive";
-  disclaimer: string;
-}
+import { canonicalSha256, type ReviewJob, type ReviewReport } from "@shiplock/shared";
 
 export interface PaidAuditBody {
-  report: AuditReport;
+  jobId: string;
+  vendorId: string;
+  report: ReviewReport;
   reportSha256: string;
   payment: {
     network: string;
@@ -38,8 +19,9 @@ export interface PaidAuditBody {
   };
 }
 
-export type Auditor = (job: AuditJob) => Promise<Omit<AuditReport, "jobId" | "repository" | "pullNumber" | "headSha">>;
+/** Produces the canonical report for the exact job (base...head diff). */
+export type Auditor = (job: ReviewJob) => Promise<ReviewReport>;
 
-export function reportDigest(report: AuditReport): string {
-  return sha256Hex(canonicalJson(report));
+export function reportDigest(report: ReviewReport): string {
+  return canonicalSha256(report);
 }

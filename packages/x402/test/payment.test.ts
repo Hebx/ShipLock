@@ -8,6 +8,7 @@ import {
   rejectReason,
   resolveHederaCapability,
   reportDigest,
+  auditUrl,
   toMirrorTransactionId,
   AuditShaMismatchError,
   CapabilityError,
@@ -16,7 +17,8 @@ import {
   PaymentUncertainError,
   type Auditor,
 } from "../src/index.ts";
-import { createStrictFacilitator, FEE_PAYER, Ledger, NETWORK, noopAuditor, PAY_TO, PAYER, payerKey, SHA, type SettleMode } from "./harness.ts";
+import { createStrictFacilitator, FEE_PAYER, JOB, BASE_SHA, Ledger, NETWORK, noopAuditor, PAY_TO, PAYER, payerKey, SHA, type SettleMode } from "./harness.ts";
+import type { ReviewJob } from "@shiplock/shared";
 
 const BASE = "http://merchant.test";
 
@@ -34,7 +36,7 @@ async function setup(opts: { auditor?: Auditor; settleMode?: () => SettleMode; p
     mirrorTimeoutMs: 0,
     now: opts.now,
   });
-  const fetchImpl = ((input: RequestInfo | URL, init?: RequestInit) => merchant.app.fetch(new Request(input, init))) as typeof fetch;
+  const fetchImpl = ((input: string | URL | Request, init?: RequestInit) => merchant.app.fetch(new Request(input, init))) as typeof fetch;
   const buyer = (over: Partial<Parameters<typeof createReviewPurchaser>[0]> = {}) =>
     createReviewPurchaser({
       network: NETWORK,
@@ -48,8 +50,9 @@ async function setup(opts: { auditor?: Auditor; settleMode?: () => SettleMode; p
       fetchImpl,
       ...over,
     });
-  const url = (jobId = "job-1", sha = SHA) => `${BASE}/audit?jobId=${jobId}&repo=Hebx/ShipLock&sha=${sha}&pr=7`;
-  return { ledger, facilitator, merchant, fetchImpl, buyer, url };
+  const jobFor = (jobId = "job-1", headSha = SHA): ReviewJob => ({ ...JOB, jobId, headSha });
+  const url = (jobId = "job-1", sha = SHA) => auditUrl(BASE, jobFor(jobId, sha));
+  return { ledger, facilitator, merchant, fetchImpl, buyer, url, jobFor };
 }
 
 async function getQuote(fetchImpl: typeof fetch, url: string) {
@@ -73,22 +76,26 @@ describe("402 challenge", () => {
     expect(pr.x402Version).toBe(2);
     expect(pr.accepts).toHaveLength(1);
     expect(req).toMatchObject({ scheme: "exact", network: NETWORK, asset: "0.0.0", amount: "1000", payTo: PAY_TO });
-    expect(req.extra).toMatchObject({ feePayer: FEE_PAYER, headSha: SHA, repository: "Hebx/ShipLock" });
+    expect(req.extra).toMatchObject({ feePayer: FEE_PAYER, headSha: SHA, baseSha: BASE_SHA, repository: JOB.repository, repositoryId: JOB.repositoryId, pullNumber: JOB.pullNumber, scannerVersion: JOB.scannerVersion });
     expect(typeof req.extra.quoteId).toBe("string");
     expect(await res.json()).toEqual(pr);
   });
 
   it("rejects malformed resource params before quoting", async () => {
     const { fetchImpl } = await setup();
-    expect((await fetchImpl(`${BASE}/audit?jobId=j&repo=Hebx/ShipLock&sha=main`)).status).toBe(400);
-    expect((await fetchImpl(`${BASE}/audit?jobId=j&repo=bad&sha=${SHA}`)).status).toBe(400);
+    const good = new URL(auditUrl(BASE, JOB));
+    for (const [k, v] of [["head", "main"], ["base", "A".repeat(40)], ["repo", "bad"], ["repoId", "0"], ["pr", "x"], ["scanner", ""]] as const) {
+      const u = new URL(good);
+      u.searchParams.set(k, v);
+      expect((await fetchImpl(u.toString())).status, k).toBe(400);
+    }
   });
 });
 
 describe("happy path (strict official facilitator scheme)", () => {
   it("pays, settles once, confirms via mirror, returns a SHA-bound audit with matching digest", async () => {
     const { buyer, url, ledger, facilitator, merchant } = await setup();
-    const r = await buyer().purchaseReview({ jobId: "job-1", reviewUrl: url(), maxTinybar: "5000", expectedHeadSha: SHA });
+    const r = await buyer().purchaseReview({ job: { ...JOB, jobId: "job-1", headSha: SHA }, reviewUrl: url(), maxTinybar: "5000" });
     expect(r.settlementConfirmed).toBe(true);
     expect(r.headSha).toBe(SHA);
     expect(r.amountBaseUnits).toBe("1000");
@@ -104,8 +111,9 @@ describe("happy path (strict official facilitator scheme)", () => {
 });
 
 describe("buyer policy (nothing is signed)", () => {
-  const base = { scheme: "exact", network: NETWORK, asset: "0.0.0", amount: "1000", payTo: PAY_TO, maxTimeoutSeconds: 120, extra: { feePayer: FEE_PAYER, headSha: SHA } } as PaymentRequirements;
-  const ctx = { network: NETWORK, allowedPayTo: [PAY_TO], feePayer: FEE_PAYER, cap: 5000n, expectedHeadSha: SHA };
+  const ex = { feePayer: FEE_PAYER, headSha: SHA, baseSha: BASE_SHA, repositoryId: JOB.repositoryId, repository: JOB.repository, pullNumber: JOB.pullNumber, scannerVersion: JOB.scannerVersion };
+  const base = { scheme: "exact", network: NETWORK, asset: "0.0.0", amount: "1000", payTo: PAY_TO, maxTimeoutSeconds: 120, extra: ex } as PaymentRequirements;
+  const ctx = { network: NETWORK, allowedPayTo: [PAY_TO], feePayer: FEE_PAYER, cap: 5000n, job: JOB };
   it.each([
     ["wrong network", { network: "hedera:mainnet" }, /network/],
     ["wrong asset (USDC)", { asset: "0.0.429274" }, /asset/],
@@ -114,8 +122,12 @@ describe("buyer policy (nothing is signed)", () => {
     ["float amount", { amount: "10.5" }, /non-integer/],
     ["negative amount", { amount: "-1" }, /non-integer/],
     ["zero amount", { amount: "0" }, /zero/],
-    ["foreign fee payer", { extra: { feePayer: "0.0.999", headSha: SHA } }, /feePayer/],
-    ["quote for another commit", { extra: { feePayer: FEE_PAYER, headSha: "a".repeat(40) } }, /bound to/],
+    ["foreign fee payer", { extra: { ...ex, feePayer: "0.0.999" } }, /feePayer/],
+    ["quote for another head commit", { extra: { ...ex, headSha: "a".repeat(40) } }, /bound to head/],
+    ["quote for another base commit", { extra: { ...ex, baseSha: "b".repeat(40) } }, /bound to base/],
+    ["quote for another repository id", { extra: { ...ex, repositoryId: 1 } }, /repository id/],
+    ["quote for another PR", { extra: { ...ex, pullNumber: 8 } }, /PR/],
+    ["quote for another scanner version", { extra: { ...ex, scannerVersion: "other/9" } }, /scanner/],
     ["upto scheme", { scheme: "upto" }, /scheme/],
   ])("%s", (_n, patch, re) => {
     expect(rejectReason({ ...base, ...patch } as PaymentRequirements, ctx)).toMatch(re);
@@ -124,9 +136,9 @@ describe("buyer policy (nothing is signed)", () => {
 
   it("end-to-end: over-cap and SHA-mismatch purchases throw PaymentPolicyError and never hit settle", async () => {
     const { buyer, url, facilitator, ledger } = await setup({ price: 20_000n });
-    await expect(buyer().purchaseReview({ jobId: "j", reviewUrl: url("j"), maxTinybar: "50000", expectedHeadSha: SHA })).rejects.toBeInstanceOf(PaymentPolicyError);
+    await expect(buyer().purchaseReview({ job: { ...JOB, jobId: "j", headSha: SHA }, reviewUrl: url("j"), maxTinybar: "50000" })).rejects.toBeInstanceOf(PaymentPolicyError);
     const s2 = await setup();
-    await expect(s2.buyer().purchaseReview({ jobId: "j", reviewUrl: s2.url("j"), maxTinybar: "5000", expectedHeadSha: "b".repeat(40) })).rejects.toBeInstanceOf(PaymentPolicyError);
+    await expect(s2.buyer().purchaseReview({ job: { ...JOB, jobId: "j", headSha: "b".repeat(40) }, reviewUrl: s2.url("j"), maxTinybar: "5000" })).rejects.toBeInstanceOf(PaymentPolicyError);
     expect(facilitator.calls.verify + s2.facilitator.calls.verify).toBe(0);
     expect(ledger.submitCount + s2.ledger.submitCount).toBe(0);
   });
@@ -252,21 +264,21 @@ describe("replay / duplicate payment", () => {
 describe("uncertain settlement", () => {
   it("facilitator throws AFTER submit -> merchant reconciles via mirror and fulfils, no re-settle", async () => {
     const s = await setup({ settleMode: () => "throw_after_submit" });
-    const r = await s.buyer().purchaseReview({ jobId: "job-1", reviewUrl: s.url(), maxTinybar: "5000", expectedHeadSha: SHA });
+    const r = await s.buyer().purchaseReview({ job: { ...JOB, jobId: "job-1", headSha: SHA }, reviewUrl: s.url(), maxTinybar: "5000" });
     expect(r.settlementConfirmed).toBe(true);
     expect(s.ledger.submitCount).toBe(1);
   });
 
   it("facilitator reports failure but tx actually landed -> reconciled as paid", async () => {
     const s = await setup({ settleMode: () => "report_failure_after_submit" });
-    const r = await s.buyer().purchaseReview({ jobId: "job-1", reviewUrl: s.url(), maxTinybar: "5000", expectedHeadSha: SHA });
+    const r = await s.buyer().purchaseReview({ job: { ...JOB, jobId: "job-1", headSha: SHA }, reviewUrl: s.url(), maxTinybar: "5000" });
     expect(r.settlementConfirmed).toBe(true);
     expect(s.ledger.submitCount).toBe(1);
   });
 
   it("facilitator throws BEFORE submit and tx still valid -> 503 pending + PaymentUncertainError; state kept 'uncertain'", async () => {
     const s = await setup({ settleMode: () => "throw_before_submit" });
-    const err = await s.buyer().purchaseReview({ jobId: "job-1", reviewUrl: s.url(), maxTinybar: "5000", expectedHeadSha: SHA }).catch((e) => e);
+    const err = await s.buyer().purchaseReview({ job: { ...JOB, jobId: "job-1", headSha: SHA }, reviewUrl: s.url(), maxTinybar: "5000" }).catch((e) => e);
     expect(err).toBeInstanceOf(PaymentUncertainError);
     const pay = s.merchant.store.getPaymentByTx((err as PaymentUncertainError).transactionId!)!;
     expect(pay.state).toBe("uncertain");
@@ -296,30 +308,53 @@ describe("uncertain settlement", () => {
 });
 
 describe("audit integrity", () => {
+  it("paid result passes the shared PaidReviewResultSchema and the report equals ShipLock's own scan", async () => {
+    const s = await setup();
+    const r = await s.buyer().purchaseReview({ job: JOB, reviewUrl: s.url(), maxTinybar: "5000" });
+    const { PaidReviewResultSchema, canonicalSha256 } = await import("@shiplock/shared");
+    const { scanDiff } = await import("@shiplock/scanner");
+    const { FIXTURE_DIFF } = await import("./harness.ts");
+    const { evidence, ...plain } = r;
+    expect(PaidReviewResultSchema.parse(plain)).toEqual(plain);
+    expect(r.evidenceKind).toBe("live");
+    expect(r.payerAccountId).toBe(PAYER);
+    const local = scanDiff(JOB, FIXTURE_DIFF);
+    expect(r.reportSha256).toBe(local.reportSha256);
+    expect(canonicalSha256(r.report)).toBe(local.reportSha256);
+    expect(r.report.conclusion).toBe(local.report.conclusion);
+    void evidence;
+  });
+
+  it("merchant refuses to serve an auditor report for a different revision (paid, 503, no re-pay)", async () => {
+    const s = await setup({ auditor: async (j) => ({ ...(await noopAuditor(j)), headSha: "e".repeat(40) }) });
+    const err = await s.buyer().purchaseReview({ job: JOB, reviewUrl: s.url(), maxTinybar: "5000" }).catch((e) => e);
+    expect(err).toBeInstanceOf(PaidButNotFulfilledError);
+  });
+
   it("merchant cannot return an audit for a different commit (report pinned to quote SHA)", async () => {
     const s = await setup();
-    const r = await s.buyer().purchaseReview({ jobId: "job-1", reviewUrl: s.url(), maxTinybar: "5000", expectedHeadSha: SHA });
+    const r = await s.buyer().purchaseReview({ job: { ...JOB, jobId: "job-1", headSha: SHA }, reviewUrl: s.url(), maxTinybar: "5000" });
     expect(r.evidence.body.report.headSha).toBe(SHA);
   });
 
   it("buyer rejects a paid response whose report references another SHA", async () => {
     const s = await setup();
-    const evil = ((input: RequestInfo | URL, init?: RequestInit) =>
+    const evil = ((input: string | URL | Request, init?: RequestInit) =>
       Promise.resolve(s.merchant.app.fetch(new Request(input, init))).then(async (res: Response) => {
         if (res.status !== 200) return res;
-        const body = await res.json();
+        const body = (await res.json()) as { report: { headSha: string }; reportSha256: string };
         body.report.headSha = "d".repeat(40);
-        body.reportSha256 = reportDigest(body.report);
+        body.reportSha256 = reportDigest(body.report as never);
         return new Response(JSON.stringify(body), { status: 200, headers: res.headers });
       })) as typeof fetch;
-    const err = await s.buyer({ fetchImpl: evil }).purchaseReview({ jobId: "job-1", reviewUrl: s.url(), maxTinybar: "5000", expectedHeadSha: SHA }).catch((e) => e);
+    const err = await s.buyer({ fetchImpl: evil }).purchaseReview({ job: { ...JOB, jobId: "job-1", headSha: SHA }, reviewUrl: s.url(), maxTinybar: "5000" }).catch((e) => e);
     expect(err).toBeInstanceOf(AuditShaMismatchError);
     expect(err.transactionId).toMatch(/^0\.0\.7162784@/);
   });
 
   it("auditor failure after settlement -> 503 paid; resending SAME payment fulfils without re-paying", async () => {
     let fail = true;
-    const s = await setup({ auditor: async (j) => { if (fail) throw new Error("github down"); return noopAuditor(); } });
+    const s = await setup({ auditor: async (j) => { if (fail) throw new Error("github down"); return noopAuditor(j); } });
     const { pr, req } = await getQuote(s.fetchImpl, s.url());
     const header = await signedHeader(pr, req);
     const a = await s.fetchImpl(s.url(), { headers: { "PAYMENT-SIGNATURE": header } });
@@ -334,7 +369,7 @@ describe("audit integrity", () => {
 
   it("buyer surfaces paid-but-unfulfilled distinctly (no blind re-pay)", async () => {
     const s = await setup({ auditor: async () => { throw new Error("down"); } });
-    const err = await s.buyer().purchaseReview({ jobId: "job-1", reviewUrl: s.url(), maxTinybar: "5000", expectedHeadSha: SHA }).catch((e) => e);
+    const err = await s.buyer().purchaseReview({ job: { ...JOB, jobId: "job-1", headSha: SHA }, reviewUrl: s.url(), maxTinybar: "5000" }).catch((e) => e);
     expect(err).toBeInstanceOf(PaidButNotFulfilledError);
   });
 });

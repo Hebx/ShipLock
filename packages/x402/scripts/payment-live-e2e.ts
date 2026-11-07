@@ -16,18 +16,23 @@ import { serve } from "@hono/node-server";
 import { HTTPFacilitatorClient } from "@x402/core/server";
 import { encodePaymentSignatureHeader, decodePaymentRequiredHeader } from "@x402/core/http";
 import { createClientHederaSigner, PrivateKey } from "@x402/hedera";
+import { createGitHubClient } from "@shiplock/github";
+import { SCANNER_VERSION, scanDiff } from "@shiplock/scanner";
+import type { ReviewJob } from "@shiplock/shared";
+import { verifyPaidReviewResult } from "../../policy/src/paid-review.ts";
+import { checkHederaTransfer } from "../../../apps/api/src/mirror-node.ts";
 import {
+  auditUrl,
   createAuditMerchant,
-  createGithubAuditor,
+  createScannerAuditor,
   createMirrorClient,
   createReviewPurchaser,
   resolveHederaCapability,
   MerchantStore,
   PaymentPolicyError,
   AuditShaMismatchError,
-  sha256Hex,
-  canonicalJson,
 } from "../src/index.ts";
+import { canonicalJson, sha256Hex } from "@shiplock/shared";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const env = loadEnv(join(root, ".env.local"));
@@ -45,8 +50,8 @@ const FACILITATOR = need("X402_FACILITATOR_URL");
 const MIRROR = need("HEDERA_MIRROR_NODE_URL");
 const PRICE = BigInt(need("AUDIT_PRICE_TINYBAR"));
 const MAX = BigInt(need("AGENT_MAX_PAYMENT_TINYBAR"));
-const REPO = process.env.AUDIT_TARGET_REPO ?? "Hebx/ShipLock";
-const SHA = process.env.AUDIT_TARGET_SHA ?? "9f02660cc260307226d23b09214d2a474c0a6bbd";
+const REPO = process.env.AUDIT_TARGET_REPO ?? "Hebx/shiplock-demo-target";
+const PR = Number(process.env.AUDIT_TARGET_PR ?? 1);
 const GH_TOKEN = process.env.GITHUB_TOKEN;
 const PORT = Number(process.env.PORT ?? 4402);
 
@@ -58,6 +63,21 @@ async function main() {
   log("capability", capability);
 
   const mirror = createMirrorClient(MIRROR);
+  const github = createGitHubClient({ allowlist: [REPO], token: GH_TOKEN });
+  const pull = await github.getPullRequest(REPO, PR);
+  const repoInfo = (await (await fetch(`https://api.github.com/repos/${REPO}`, { headers: GH_TOKEN ? { authorization: `Bearer ${GH_TOKEN}` } : {} })).json()) as { id: number };
+  const job: ReviewJob = {
+    jobId: `live-${Date.now()}`,
+    repositoryId: repoInfo.id,
+    repository: REPO,
+    pullNumber: PR,
+    headSha: pull.headSha,
+    baseSha: pull.baseSha,
+    scannerVersion: SCANNER_VERSION,
+  };
+  // ShipLock's own independent scan of the same SHA-pinned diff (what Cursor's API stores as local_report_sha256).
+  const localScan = scanDiff(job, await github.getCompareDiff(REPO, job.baseSha, job.headSha));
+  log("job", { ...job, localReportSha256: localScan.reportSha256, conclusion: localScan.report.conclusion });
   const before = await balances([PAYER, PAY_TO, capability.feePayer]);
 
   const store = new MerchantStore(join(root, "data", "payment-live.sqlite"));
@@ -68,15 +88,20 @@ async function main() {
     facilitator,
     mirror,
     store,
-    auditor: createGithubAuditor({ token: GH_TOKEN }),
+    auditor: createScannerAuditor({ github }),
+    repoAllowlist: [REPO],
     publicBaseUrl: `http://127.0.0.1:${PORT}`,
     log: (e, d) => log(`merchant.${e}`, d),
   });
   const server = serve({ fetch: merchant.app.fetch, port: PORT, hostname: "127.0.0.1" });
 
   try {
-    const jobId = `live-${Date.now()}`;
-    const reviewUrl = `http://127.0.0.1:${PORT}/audit?jobId=${jobId}&repo=${REPO}&sha=${SHA}`;
+    const base = `http://127.0.0.1:${PORT}`;
+    const reviewUrl = auditUrl(base, job);
+    const variant = (suffix: string, patch: Partial<ReviewJob> = {}) => {
+      const j = { ...job, jobId: `${job.jobId}-${suffix}`, ...patch };
+      return { j, url: auditUrl(base, j) };
+    };
 
     // 1) Raw unpaid probe: standards-compliant 402.
     const unpaid = await fetch(reviewUrl);
@@ -97,11 +122,21 @@ async function main() {
       onSigned: ({ transactionId }) => log("signed", { transactionId }),
     });
     const t0 = Date.now();
-    const result = await buyer.purchaseReview({ jobId, reviewUrl, maxTinybar: MAX.toString(), expectedHeadSha: SHA });
+    const result = await buyer.purchaseReview({ job, reviewUrl, maxTinybar: MAX.toString() });
     const elapsedMs = Date.now() - t0;
-    log("paid", { tx: result.hederaTransactionId, reportSha256: result.reportSha256, findings: result.findings.length, elapsedMs });
+    log("paid", { tx: result.hederaTransactionId, reportSha256: result.reportSha256, findings: result.report.findings.length, elapsedMs });
 
-    const mirrorRecord = await (await fetch(`${MIRROR}/api/v1/transactions/${toMirror(result.hederaTransactionId)}`)).json();
+    // Cursor's unmodified acceptance policy + mirror check on the live result.
+    const { evidence: _ev, ...plainResult } = result;
+    const cursorVerdict = verifyPaidReviewResult(job, plainResult, {
+      network: NETWORK, asset: "0.0.0", merchantAccountId: PAY_TO, quotedTinybar: PRICE.toString(), maxTinybar: MAX.toString(),
+      allowedEvidenceKinds: ["live"], independentReportSha256: localScan.reportSha256,
+    });
+    const cursorLedger = await checkHederaTransfer(fetch, MIRROR, { transactionId: result.hederaTransactionId, payer: PAYER, merchant: PAY_TO, amountTinybar: result.amountBaseUnits });
+    log("cursor_acceptance", { verdict: cursorVerdict.ok ? "ok" : cursorVerdict.reasons, ledger: cursorLedger });
+    if (!cursorVerdict.ok || cursorLedger.kind !== "confirmed") throw new Error("Cursor acceptance failed on live result");
+
+    const mirrorRecord: any = await (await fetch(`${MIRROR}/api/v1/transactions/${toMirror(result.hederaTransactionId)}`)).json();
     const after = await balances([PAYER, PAY_TO, capability.feePayer]);
 
     // 3) Negative probes against the live merchant + live facilitator.
@@ -114,33 +149,27 @@ async function main() {
     // 3b) Over-cap: buyer refuses to sign.
     negatives.over_cap = await expectThrow(PaymentPolicyError, () =>
       createReviewPurchaser({ network: NETWORK, payerAccountId: PAYER, payerPrivateKey: PAYER_KEY, allowedPayTo: [PAY_TO], expectedFeePayer: capability.feePayer, globalMaxTinybar: PRICE - 1n, mirror }).purchaseReview({
-        jobId: `${jobId}-cap`,
-        reviewUrl: reviewUrl.replace(jobId, `${jobId}-cap`),
-        maxTinybar: (PRICE - 1n).toString(),
-        expectedHeadSha: SHA,
+        job: variant("cap").j, reviewUrl: variant("cap").url, maxTinybar: (PRICE - 1n).toString(),
       }),
     );
 
     // 3c) Wrong recipient allowlist: buyer refuses.
     negatives.wrong_recipient = await expectThrow(PaymentPolicyError, () =>
       createReviewPurchaser({ network: NETWORK, payerAccountId: PAYER, payerPrivateKey: PAYER_KEY, allowedPayTo: ["0.0.1234"], expectedFeePayer: capability.feePayer, globalMaxTinybar: MAX, mirror }).purchaseReview({
-        jobId: `${jobId}-rcpt`,
-        reviewUrl: reviewUrl.replace(jobId, `${jobId}-rcpt`),
-        maxTinybar: MAX.toString(),
-        expectedHeadSha: SHA,
+        job: variant("rcpt").j, reviewUrl: variant("rcpt").url, maxTinybar: MAX.toString(),
       }),
     );
 
-    // 3d) Expected head SHA differs from the quote's SHA: buyer refuses to sign.
+    // 3d) Agent expects a different head than the URL/quote describes: buyer refuses to sign.
     negatives.sha_mismatch_presign = await expectThrow(PaymentPolicyError, () =>
-      buyer.purchaseReview({ jobId: `${jobId}-sha`, reviewUrl: reviewUrl.replace(jobId, `${jobId}-sha`), maxTinybar: MAX.toString(), expectedHeadSha: "0".repeat(40) }),
+      buyer.purchaseReview({ job: { ...variant("sha").j, headSha: "0".repeat(40) }, reviewUrl: variant("sha").url, maxTinybar: MAX.toString() }),
     );
 
     // 3e) Modified quote (amount lowered) signed by the real key: merchant rejects before facilitator.
-    negatives.modified_quote = await tamperedPayment(reviewUrl.replace(jobId, `${jobId}-tamper`), (r) => ({ ...r, amount: "1" }));
+    negatives.modified_quote = await tamperedPayment(variant("tamper").url, (r) => ({ ...r, amount: "1" }));
 
     // 3f) Invalid signature: valid tx body signed by a random key -> real facilitator /verify rejects.
-    negatives.invalid_signature = await tamperedPayment(reviewUrl.replace(jobId, `${jobId}-badsig`), (r) => r, PrivateKey.generateECDSA());
+    negatives.invalid_signature = await tamperedPayment(variant("badsig").url, (r) => r, PrivateKey.generateECDSA());
 
     log("negatives", negatives);
 
@@ -165,14 +194,19 @@ async function main() {
         elapsedMsAgentStartToConfirmed: elapsedMs,
       },
       balances: { before, after },
+      job,
+      cursorAcceptance: { verifyPaidReviewResult: cursorVerdict.ok, checkHederaTransfer: cursorLedger },
       paidAudit: {
         repository: REPO,
+        pullRequest: `https://github.com/${REPO}/pull/${PR}`,
+        localReportSha256: localScan.reportSha256,
         headSha: result.headSha,
         reportSha256: result.reportSha256,
         responseBodySha256: sha256Hex(canonicalJson(result.evidence.body)),
-        findings: result.findings.length,
-        verdict: result.evidence.body.report.verdict,
-        filesScanned: result.evidence.body.report.filesScanned,
+        findings: result.report.findings.length,
+        conclusion: result.report.conclusion,
+        diffSha256: result.report.diffSha256,
+        stats: result.report.stats,
         vendorId: result.vendorId,
         scannerVersion: result.scannerVersion,
       },
@@ -228,6 +262,7 @@ async function expectThrow(cls: new (...a: any[]) => Error, fn: () => Promise<un
   throw new Error(`expected ${cls.name}, call succeeded`);
 }
 void AuditShaMismatchError;
+void canonicalJson;
 
 async function balances(ids: string[]) {
   const out: Record<string, number> = {};
@@ -246,6 +281,7 @@ function toMirror(id: string) {
 
 function installedVersions() {
   const pkgs = ["@x402/core", "@x402/fetch", "@x402/hedera", "@hiero-ledger/sdk", "hono", "@hono/node-server"];
+  // resolved through the workspace package
   const out: Record<string, string> = { node: process.version };
   for (const p of pkgs) {
     out[p] = JSON.parse(readFileSync(join(root, "packages", "x402", "node_modules", p, "package.json"), "utf8")).version;

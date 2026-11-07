@@ -15,7 +15,7 @@ Checked 2026-11-07 against live GitHub, npm and the Hedera testnet mirror node. 
 | Turnstile | `8f6249a` | agent payment flow, paid analytics API, HCS receipts | Yes: `0.0.7162784-1788791855-758948636` SUCCESS; HCS topic `0.0.10408013` | MIT in `package.json`, **no LICENSE file** | Patterns only (HCS hash receipts for M6) | Replay guard in memory only; resource binding advisory. |
 | hedera-dev/x402-inference-pay-per-request-poc | `a56ad60` | `packages/service/src/x402.ts`, `packages/agent/src/x402-client.ts` | **Unverified**: no tx ids in repo | **None** | Read-only reference | 2.18-era pins; defaults mainnet to `api.blocky402.com`; agent server holds keys behind open CORS. |
 | Glorian-Labs/Hedron PR #11 / #12 | #11 merged `894d5b9`; #12 open (docs) | `src/settlement/x402/*`, `docs/X402_ADAPTER.md` | **Unverified**: no tx id recorded | (repo license) | Security lessons: `freezeWith`, fee payer from `/supported`, quote checks, never auto-resettle, mainnet/testnet host pitfall | Hand-rolled wire types on 2.20; in-memory replay set; not wired into Broker+HCS. |
-| World ID Agent Pass OIDC | n/a | n/a | n/a | n/a | Cursor lane (M3) | Hermes reviews in M5 |
+| World IDKit 4.6.0 (replaces Agent Pass OIDC; Agent Pass registration blocked by account eligibility) | `@worldcoin/idkit-core` / `@worldcoin/idkit` 4.6.0 | Cursor lane | not yet run live | n/a | Cursor owns (M3) | Hermes reviews in M5 |
 
 ## Facilitator capability (verified, not assumed)
 

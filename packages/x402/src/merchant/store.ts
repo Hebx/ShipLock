@@ -13,9 +13,12 @@ export type PaymentState = "settling" | "settled" | "failed" | "uncertain";
 export interface QuoteRow {
   quoteId: string;
   jobId: string;
+  repositoryId: number;
   repository: string;
+  pullNumber: number;
   headSha: string;
-  pullNumber: number | null;
+  baseSha: string;
+  scannerVersion: string;
   requirementsJson: string;
   resourceUrl: string;
   createdAt: number;
@@ -50,9 +53,12 @@ export class MerchantStore {
       CREATE TABLE IF NOT EXISTS quotes (
         quote_id TEXT PRIMARY KEY,
         job_id TEXT NOT NULL,
+        repository_id INTEGER NOT NULL,
         repository TEXT NOT NULL,
+        pull_number INTEGER NOT NULL,
         head_sha TEXT NOT NULL,
-        pull_number INTEGER,
+        base_sha TEXT NOT NULL,
+        scanner_version TEXT NOT NULL,
         requirements_json TEXT NOT NULL,
         resource_url TEXT NOT NULL,
         created_at INTEGER NOT NULL,
@@ -80,10 +86,10 @@ export class MerchantStore {
   insertQuote(q: QuoteRow): void {
     this.db
       .prepare(
-        `INSERT INTO quotes (quote_id, job_id, repository, head_sha, pull_number, requirements_json, resource_url, created_at, expires_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO quotes (quote_id, job_id, repository_id, repository, pull_number, head_sha, base_sha, scanner_version, requirements_json, resource_url, created_at, expires_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(q.quoteId, q.jobId, q.repository, q.headSha, q.pullNumber, q.requirementsJson, q.resourceUrl, q.createdAt, q.expiresAt);
+      .run(q.quoteId, q.jobId, q.repositoryId, q.repository, q.pullNumber, q.headSha, q.baseSha, q.scannerVersion, q.requirementsJson, q.resourceUrl, q.createdAt, q.expiresAt);
   }
 
   getQuote(quoteId: string): QuoteRow | undefined {
@@ -92,9 +98,12 @@ export class MerchantStore {
     return {
       quoteId: String(r.quote_id),
       jobId: String(r.job_id),
+      repositoryId: Number(r.repository_id),
       repository: String(r.repository),
+      pullNumber: Number(r.pull_number),
       headSha: String(r.head_sha),
-      pullNumber: r.pull_number == null ? null : Number(r.pull_number),
+      baseSha: String(r.base_sha),
+      scannerVersion: String(r.scanner_version),
       requirementsJson: String(r.requirements_json),
       resourceUrl: String(r.resource_url),
       createdAt: Number(r.created_at),

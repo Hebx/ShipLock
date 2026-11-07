@@ -4,6 +4,8 @@ Hedera x402 v2 payment subsystem for ShipLock: a paid `/audit` merchant and an a
 
 ## Integration (Cursor)
 
+Contract mapping and call pattern: [`docs/integration/PAYMENT_CONTRACT.md`](../../docs/integration/PAYMENT_CONTRACT.md). The example below predates contract v2; the doc is authoritative.
+
 ```ts
 import { createReviewPurchaser, createMirrorClient, resolveHederaCapability } from "@shiplock/x402";
 import { HTTPFacilitatorClient } from "@x402/core/server";
@@ -69,10 +71,10 @@ Merchant invariants:
 ## Commands
 
 ```bash
-pnpm --dir packages/x402 install --frozen-lockfile
-pnpm --dir packages/x402 typecheck
-pnpm --dir packages/x402 test          # strict official-scheme facilitator, no network
-pnpm --dir packages/x402 live          # LIVE testnet: spends AUDIT_PRICE_TINYBAR, writes docs/evidence/payment/
+pnpm install --frozen-lockfile
+pnpm --filter @shiplock/x402 typecheck
+pnpm --filter @shiplock/x402 test      # strict official-scheme facilitator + Cursor acceptance, no network
+pnpm --filter @shiplock/x402 live      # LIVE testnet: spends AUDIT_PRICE_TINYBAR, writes docs/evidence/payment/
 ```
 
 Pins: `@x402/{core,fetch,hedera}` 2.30.0, `@hiero-ledger/sdk` 2.90.1 (matches `@x402/hedera`'s exact pin; single SDK instance). Node ≥ 22.5 (`node:sqlite`).

@@ -1,18 +1,26 @@
 /**
- * Autonomous buyer: purchaseReview({ jobId, reviewUrl, maxTinybar, expectedHeadSha }).
+ * Autonomous buyer implementing ReviewPurchaseGateway (packages/shared/src/contracts.ts).
  *
  * Uses the official @x402/fetch + @x402/hedera exact client for 402 negotiation and signing.
  * ShipLock policy runs in a PaymentPolicy *before* anything is signed:
- *   network, scheme, asset (HBAR only), payTo allowlist, feePayer == facilitator /supported,
- *   integer amount <= maxTinybar, quote bound to the expected head SHA.
- * After the paid response we independently confirm on the Mirror Node and recompute the report digest.
+ *   scheme exact, network, asset HBAR, payTo allowlist, feePayer == facilitator /supported,
+ *   integer amount <= cap, and the quote bound to the exact ReviewJob (repo id, PR, base, head, scanner).
+ * After the paid response: Mirror Node confirmation of the exact transfer, digest recomputation,
+ * report binding to the job, then PaidReviewResultSchema validation.
  */
 import { x402Client, wrapFetchWithPayment, decodePaymentResponseHeader } from "@x402/fetch";
 import type { PaymentRequirements } from "@x402/fetch";
 import { ExactHederaScheme } from "@x402/hedera/exact/client";
 import { createClientHederaSigner, HBAR_ASSET_ID, inspectHederaTransaction, PrivateKey } from "@x402/hedera";
-import type { PaidReviewResult, PurchaseReviewInput, ReviewPurchaseGateway } from "../../../shared/src/contracts.ts";
-import { ENTITY_RE, HEX_SHA_RE, UINT_RE } from "../canonical.ts";
+import {
+  PaidReviewResultSchema,
+  ReviewJobSchema,
+  type PaidReviewResult,
+  type PurchaseReviewInput,
+  type ReviewJob,
+  type ReviewPurchaseGateway,
+} from "@shiplock/shared";
+import { ENTITY_RE, UINT_RE } from "../canonical.ts";
 import { reportDigest, type PaidAuditBody } from "../audit.ts";
 import type { HederaNetwork } from "../capabilities.ts";
 import { assertHbarTransfer, waitForMirror, type MirrorClient } from "../mirror.ts";
@@ -24,8 +32,10 @@ import {
   PaymentUncertainError,
 } from "../errors.ts";
 
+export const ADAPTER_ID = "hermes-x402-hedera/2.30.0";
+
 export interface BuyerConfig {
-  network: HederaNetwork;
+  network: "hedera:testnet";
   payerAccountId: string;
   /** ECDSA (secp256k1) private key string. Never logged. */
   payerPrivateKey: string;
@@ -66,12 +76,15 @@ export function createReviewPurchaser(cfg: BuyerConfig): ReviewPurchaser {
   const baseFetch = cfg.fetchImpl ?? fetch;
 
   return {
+    adapterId: ADAPTER_ID,
     async purchaseReview(input: PurchaseReviewInput): Promise<PurchaseResult> {
-      const expectedHeadSha = input.expectedHeadSha.toLowerCase();
-      if (!HEX_SHA_RE.test(expectedHeadSha)) throw new PaymentPolicyError("expectedHeadSha must be 40 hex chars");
+      const jobParse = ReviewJobSchema.safeParse(input.job);
+      if (!jobParse.success) throw new PaymentPolicyError("invalid ReviewJob");
+      const job = jobParse.data;
       if (!UINT_RE.test(input.maxTinybar)) throw new PaymentPolicyError("maxTinybar must be an integer string");
       const cap = minBig(BigInt(input.maxTinybar), cfg.globalMaxTinybar);
       if (cap <= 0n) throw new PaymentPolicyError("spend cap is zero");
+      const policy: PolicyContext = { network: cfg.network, allowedPayTo: cfg.allowedPayTo, feePayer: cfg.expectedFeePayer, cap, job };
 
       let accepted: PaymentRequirements | undefined;
       let signedTxId: string | undefined;
@@ -80,22 +93,17 @@ export function createReviewPurchaser(cfg: BuyerConfig): ReviewPurchaser {
       client.register(cfg.network, new ExactHederaScheme(signer));
       // Our own integer cap supersedes the SDK's USD default (HBAR has no USD default asset).
       client.setSpendControls({ allowedAssets: [{ network: cfg.network, asset: HBAR_ASSET_ID, maxAmountPerPayment: cap.toString() }] });
-      client.registerPolicy((_v, reqs) =>
-        reqs.filter((r) => {
-          const reason = rejectReason(r, { network: cfg.network, allowedPayTo: cfg.allowedPayTo, feePayer: cfg.expectedFeePayer, cap, expectedHeadSha });
-          return reason === null;
-        }),
-      );
+      client.registerPolicy((_v, reqs) => reqs.filter((r) => rejectReason(r, policy) === null));
       client.onBeforePaymentCreation(async ({ selectedRequirements }) => {
         // Second, explicit check on the single requirement actually being signed.
-        const reason = rejectReason(selectedRequirements, { network: cfg.network, allowedPayTo: cfg.allowedPayTo, feePayer: cfg.expectedFeePayer, cap, expectedHeadSha });
+        const reason = rejectReason(selectedRequirements, policy);
         if (reason) return { abort: true, reason };
         if (accepted) return { abort: true, reason: "refusing a second payment within one purchase" };
         accepted = structuredClone(selectedRequirements);
       });
       client.onAfterPaymentCreation(async ({ paymentPayload }) => {
         signedTxId = txIdFromPayload(paymentPayload.payload);
-        await cfg.onSigned?.({ jobId: input.jobId, transactionId: signedTxId, requirements: paymentPayload.accepted });
+        await cfg.onSigned?.({ jobId: job.jobId, transactionId: signedTxId, requirements: paymentPayload.accepted });
       });
 
       const paidFetch = wrapFetchWithPayment(baseFetch, client);
@@ -118,8 +126,8 @@ export function createReviewPurchaser(cfg: BuyerConfig): ReviewPurchaser {
 
       if (res.status !== 200) {
         const text = await res.text().catch(() => "");
-        if (res.status === 503 || res.status >= 500) return settleUncertain(signedTxId, `merchant ${res.status}: ${text.slice(0, 200)}`);
-        // 402 after a signed payment: the merchant rejected it before settlement (or reports failure).
+        if (res.status >= 500) return settleUncertain(signedTxId, `merchant ${res.status}: ${text.slice(0, 200)}`);
+        // 402/4xx after a signed payment: rejected before settlement, unless the ledger says otherwise.
         const mirror = await waitForMirror(cfg.mirror, signedTxId, { timeoutMs: 6_000 });
         if (mirror.state === "success") throw new PaidButNotFulfilledError(`paid but merchant returned ${res.status}`, signedTxId);
         throw new PaymentPolicyError(`payment rejected by merchant (${res.status}): ${extractError(text)}`);
@@ -142,25 +150,34 @@ export function createReviewPurchaser(cfg: BuyerConfig): ReviewPurchaser {
       if (!body?.report || typeof body.reportSha256 !== "string") throw new AuditIntegrityError("paid response has no report", signedTxId);
       const digest = reportDigest(body.report);
       if (digest !== body.reportSha256) throw new AuditIntegrityError(`report digest mismatch: computed ${digest}`, signedTxId);
-      if (body.report.headSha.toLowerCase() !== expectedHeadSha) throw new AuditShaMismatchError(expectedHeadSha, body.report.headSha, signedTxId);
-      if (body.report.jobId !== input.jobId) throw new AuditIntegrityError(`report jobId ${body.report.jobId} != ${input.jobId}`, signedTxId);
+      if (body.report.headSha !== job.headSha) throw new AuditShaMismatchError(job.headSha, body.report.headSha, signedTxId);
+      const bindErr = reportBindingError(body, job);
+      if (bindErr) throw new AuditIntegrityError(bindErr, signedTxId);
       if (body.payment?.transactionId !== signedTxId) throw new AuditIntegrityError("report bound to a different payment", signedTxId);
 
-      return {
-        jobId: input.jobId,
-        headSha: expectedHeadSha,
+      const result: PaidReviewResult = {
+        jobId: job.jobId,
+        repositoryId: job.repositoryId,
+        pullNumber: job.pullNumber,
+        headSha: job.headSha,
         reportSha256: digest,
-        findings: body.report.findings,
-        network: "hedera:testnet",
+        report: body.report,
+        network: cfg.network,
         asset: accepted.asset,
         amountBaseUnits: accepted.amount,
+        payerAccountId: cfg.payerAccountId,
         merchantAccountId: accepted.payTo,
         hederaTransactionId: signedTxId,
         settlementConfirmed: true,
-        vendorId: body.report.vendorId,
+        evidenceKind: "live",
+        vendorId: body.vendorId,
         scannerVersion: body.report.scannerVersion,
-        evidence: { requirements: accepted, transactionId: signedTxId, consensusTimestamp: status.consensusTimestamp, body },
       };
+      // Validate against the shared runtime schema before handing it to ShipLock.
+      const validated = PaidReviewResultSchema.safeParse(result);
+      if (!validated.success) throw new AuditIntegrityError(`result fails PaidReviewResultSchema: ${validated.error.issues[0]?.message}`, signedTxId);
+
+      return { ...validated.data, evidence: { requirements: accepted, transactionId: signedTxId, consensusTimestamp: status.consensusTimestamp, body } };
 
       async function settleUncertain(txId: string, why: string): Promise<never> {
         const s = await waitForMirror(cfg.mirror, txId, { timeoutMs: cfg.mirrorTimeoutMs ?? 30_000 });
@@ -177,7 +194,7 @@ export interface PolicyContext {
   allowedPayTo: string[];
   feePayer: string;
   cap: bigint;
-  expectedHeadSha: string;
+  job: ReviewJob;
 }
 
 /** Pure, unit-tested: why a requirement must not be signed (null = acceptable). */
@@ -191,8 +208,26 @@ export function rejectReason(r: PaymentRequirements, p: PolicyContext): string |
   const amt = BigInt(r.amount);
   if (amt <= 0n) return "zero amount";
   if (amt > p.cap) return `amount ${amt} exceeds cap ${p.cap}`;
-  if (String(r.extra?.headSha ?? "").toLowerCase() !== p.expectedHeadSha) return `quote bound to ${String(r.extra?.headSha)} not ${p.expectedHeadSha}`;
   if (typeof r.maxTimeoutSeconds !== "number" || r.maxTimeoutSeconds <= 0 || r.maxTimeoutSeconds > 600) return "bad maxTimeoutSeconds";
+  const e = r.extra ?? {};
+  const j = p.job;
+  if (e.headSha !== j.headSha) return `quote bound to head ${String(e.headSha)} not ${j.headSha}`;
+  if (e.baseSha !== j.baseSha) return `quote bound to base ${String(e.baseSha)} not ${j.baseSha}`;
+  if (e.repositoryId !== j.repositoryId) return `quote bound to repository id ${String(e.repositoryId)} not ${j.repositoryId}`;
+  if (String(e.repository ?? "").toLowerCase() !== j.repository.toLowerCase()) return `quote bound to ${String(e.repository)} not ${j.repository}`;
+  if (e.pullNumber !== j.pullNumber) return `quote bound to PR ${String(e.pullNumber)} not ${j.pullNumber}`;
+  if (e.scannerVersion !== j.scannerVersion) return `quote bound to scanner ${String(e.scannerVersion)} not ${j.scannerVersion}`;
+  return null;
+}
+
+function reportBindingError(body: PaidAuditBody, job: ReviewJob): string | null {
+  const r = body.report;
+  if (body.jobId !== job.jobId) return `paid body jobId ${body.jobId} != ${job.jobId}`;
+  if (r.repositoryId !== job.repositoryId) return "report repository id mismatch";
+  if (r.repository.toLowerCase() !== job.repository.toLowerCase()) return "report repository mismatch";
+  if (r.pullNumber !== job.pullNumber) return "report pull request mismatch";
+  if (r.baseSha !== job.baseSha) return "report base SHA mismatch";
+  if (r.scannerVersion !== job.scannerVersion) return "report scanner version mismatch";
   return null;
 }
 

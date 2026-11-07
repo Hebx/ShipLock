@@ -12,12 +12,17 @@ import type { PaymentPayload, PaymentRequirements, SettleResponse, SupportedResp
 import { ExactHederaScheme as FacilitatorScheme } from "@x402/hedera/exact/facilitator";
 import { PrivateKey, Transaction, inspectHederaTransaction, extractTransactionFromPayload } from "@x402/hedera";
 import type { MirrorClient, MirrorStatus } from "../src/mirror.ts";
+import type { ReviewJob } from "@shiplock/shared";
+import { SCANNER_VERSION } from "@shiplock/scanner";
+import { createScannerAuditor } from "../src/merchant/scanner-auditor.ts";
+import type { Auditor } from "../src/audit.ts";
 
 export const NETWORK = "hedera:testnet" as const;
 export const FEE_PAYER = "0.0.7162784";
 export const PAYER = "0.0.7304745";
 export const PAY_TO = "0.0.9050506";
 export const SHA = "9f02660cc260307226d23b09214d2a474c0a6bbd";
+export const BASE_SHA = "8f5096f0000000000000000000000000000000aa";
 
 export const payerKey = PrivateKey.generateECDSA();
 
@@ -97,11 +102,38 @@ function roundTrip<T>(v: T): T {
   return JSON.parse(JSON.stringify(v)) as T;
 }
 
-export const noopAuditor = async () => ({
-  vendorId: "test-vendor",
-  scannerVersion: "t-1",
-  filesScanned: 1,
-  findings: [{ ruleId: "exec.eval", severity: "medium" as const, file: "a.ts", line: 3, description: "Dynamic code evaluation" }],
-  verdict: "pass" as const,
-  disclaimer: "test",
+/** A small real unified diff; the real @shiplock/scanner produces the canonical report. */
+export const FIXTURE_DIFF = new TextEncoder().encode(
+  [
+    "diff --git a/src/run.ts b/src/run.ts",
+    "index 1111111..2222222 100644",
+    "--- a/src/run.ts",
+    "+++ b/src/run.ts",
+    "@@ -1,1 +1,3 @@",
+    " export const a = 1;",
+    "+import { execSync } from 'node:child_process';",
+    "+export const b = (x: string) => execSync(`ls ${x}`);",
+    "",
+  ].join("\n"),
+);
+
+export const JOB: ReviewJob = {
+  jobId: "job-1",
+  repositoryId: 987654,
+  repository: "Hebx/shiplock-demo-target",
+  pullNumber: 7,
+  headSha: SHA,
+  baseSha: BASE_SHA,
+  scannerVersion: SCANNER_VERSION,
+};
+
+export const scannerAuditor: Auditor = createScannerAuditor({
+  github: {
+    async getCompareDiff(_repo, base, head) {
+      if (base !== BASE_SHA || head !== SHA) throw new Error(`no fixture for ${base}...${head}`);
+      return FIXTURE_DIFF;
+    },
+  },
 });
+
+export const noopAuditor = scannerAuditor;

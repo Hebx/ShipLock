@@ -8,14 +8,16 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit -p .",
     "test": "vitest run",
-    "live": "tsx scripts/payment-live-e2e.ts",
-    "probe:supported": "tsx scripts/payment-probe-supported.ts"
+    "live": "tsx scripts/payment-live-e2e.ts"
   },
   "dependencies": {
     "@hiero-ledger/sdk": "2.90.1",
     "@hono/node-server": "2.1.6",
+    "@shiplock/github": "workspace:*",
+    "@shiplock/scanner": "workspace:*",
+    "@shiplock/shared": "workspace:*",
     "@x402/core": "2.30.0",
     "@x402/fetch": "2.30.0",
     "@x402/hedera": "2.30.0",
