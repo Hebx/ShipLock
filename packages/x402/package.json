@@ -1,0 +1,30 @@
+{
+  "name": "@shiplock/x402",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "live": "tsx scripts/payment-live-e2e.ts",
+    "probe:supported": "tsx scripts/payment-probe-supported.ts"
+  },
+  "dependencies": {
+    "@hiero-ledger/sdk": "2.90.1",
+    "@hono/node-server": "2.1.6",
+    "@x402/core": "2.30.0",
+    "@x402/fetch": "2.30.0",
+    "@x402/hedera": "2.30.0",
+    "hono": "4.13.16"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.6",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vitest": "5.1.0"
+  }
+}

@@ -1,0 +1,140 @@
+{
+  "kind": "LIVE hedera:testnet x402 v2 exact HBAR",
+  "startedAt": "2026-11-07T00:55:40.566Z",
+  "finishedAt": "2026-11-07T00:55:54.007Z",
+  "facilitator": {
+    "url": "https://api.testnet.blocky402.com",
+    "supportedHederaKind": {
+      "x402Version": 2,
+      "scheme": "exact",
+      "network": "hedera:testnet",
+      "extra": {
+        "feePayer": "0.0.7162784"
+      }
+    },
+    "hederaSigners": [
+      "0.0.7162784"
+    ]
+  },
+  "roles": {
+    "payer": "0.0.7304745",
+    "merchantPayTo": "0.0.9050506",
+    "feePayer": "0.0.7162784"
+  },
+  "paymentRequirements": [
+    {
+      "scheme": "exact",
+      "network": "hedera:testnet",
+      "amount": "1000",
+      "asset": "0.0.0",
+      "payTo": "0.0.9050506",
+      "maxTimeoutSeconds": 120,
+      "extra": {
+        "quoteId": "b8c07595-b234-4bdc-a9ef-4dc114d8348e",
+        "headSha": "9f02660cc260307226d23b09214d2a474c0a6bbd",
+        "repository": "Hebx/ShipLock",
+        "feePayer": "0.0.7162784"
+      }
+    }
+  ],
+  "resource": {
+    "url": "http://127.0.0.1:4402/audit?jobId=live-1794012941190&repo=Hebx%2FShipLock&sha=9f02660cc260307226d23b09214d2a474c0a6bbd",
+    "description": "ShipLock code review of Hebx/ShipLock@9f02660cc260307226d23b09214d2a474c0a6bbd",
+    "mimeType": "application/json",
+    "serviceName": "shiplock-audit"
+  },
+  "settlement": {
+    "transactionId": "0.0.7162784@1794012935.145851264",
+    "hashscan": "https://hashscan.io/testnet/transaction/1794012941.965828621",
+    "hashscanById": "https://hashscan.io/testnet/transactionsById/0.0.7162784-1794012935-145851264",
+    "mirrorUrl": "https://testnet.mirrornode.hedera.com/api/v1/transactions/0.0.7162784-1794012935-145851264",
+    "consensusTimestamp": "1794012941.965828621",
+    "mirrorResult": "SUCCESS",
+    "mirrorTransfers": [
+      {
+        "account": "0.0.802",
+        "amount": 296290,
+        "is_approval": false
+      },
+      {
+        "account": "0.0.7162784",
+        "amount": -296290,
+        "is_approval": false
+      },
+      {
+        "account": "0.0.7304745",
+        "amount": -1000,
+        "is_approval": false
+      },
+      {
+        "account": "0.0.9050506",
+        "amount": 1000,
+        "is_approval": false
+      }
+    ],
+    "chargedTxFee": 296290,
+    "elapsedMsAgentStartToConfirmed": 12313
+  },
+  "balances": {
+    "before": {
+      "0.0.7304745": 68700684415,
+      "0.0.9050506": 5335203730,
+      "0.0.7162784": 29014939353086
+    },
+    "after": {
+      "0.0.7304745": 68700683415,
+      "0.0.9050506": 5335204730,
+      "0.0.7162784": 29014938167926
+    }
+  },
+  "paidAudit": {
+    "repository": "Hebx/ShipLock",
+    "headSha": "9f02660cc260307226d23b09214d2a474c0a6bbd",
+    "reportSha256": "abfa722fec901848f206e4a75157d0159a2f4faeae278fba8926ee6fe556dff0",
+    "responseBodySha256": "e56ac853329347bad11959ecba4858fc679d27ac33a5af51b92f9132a12e8cbd",
+    "findings": 1,
+    "verdict": "pass",
+    "filesScanned": 24,
+    "vendorId": "shiplock-x402-reference-auditor",
+    "scannerVersion": "ref-rules-0.1.0"
+  },
+  "paidReviewResult": {
+    "jobId": "live-1794012941190",
+    "headSha": "9f02660cc260307226d23b09214d2a474c0a6bbd",
+    "reportSha256": "abfa722fec901848f206e4a75157d0159a2f4faeae278fba8926ee6fe556dff0",
+    "findings": [
+      {
+        "ruleId": "exec.eval",
+        "severity": "medium",
+        "file": "docs/IMPLEMENTATION_BRIEF.md",
+        "line": 61,
+        "description": "Dynamic code evaluation"
+      }
+    ],
+    "network": "hedera:testnet",
+    "asset": "0.0.0",
+    "amountBaseUnits": "1000",
+    "merchantAccountId": "0.0.9050506",
+    "hederaTransactionId": "0.0.7162784@1794012935.145851264",
+    "settlementConfirmed": true,
+    "vendorId": "shiplock-x402-reference-auditor",
+    "scannerVersion": "ref-rules-0.1.0"
+  },
+  "negativeProbes": {
+    "replay_same_payment": "db payment=settled fulfillment=1 row; unpaid re-request -> 402",
+    "over_cap": "PaymentPolicyError: Failed to create payment payload: All payment requirements were rejected by spendControls.allowedAssets maxAmountPerPayment. Raise the per-asset cap, or omit ma",
+    "wrong_recipient": "PaymentPolicyError: Failed to create payment payload: All payment requirements were filtered out by policies for x402 version: 2",
+    "sha_mismatch_presign": "PaymentPolicyError: Failed to create payment payload: All payment requirements were filtered out by policies for x402 version: 2",
+    "modified_quote": "402 quote_modified",
+    "invalid_signature": "402 invalid_exact_hedera_payload_signature_invalid"
+  },
+  "sdkVersions": {
+    "node": "v22.23.3",
+    "@x402/core": "2.30.0",
+    "@x402/fetch": "2.30.0",
+    "@x402/hedera": "2.30.0",
+    "@hiero-ledger/sdk": "2.90.1",
+    "hono": "4.13.16",
+    "@hono/node-server": "2.1.6"
+  }
+}
