@@ -1,0 +1,28 @@
+name: payment (packages/x402)
+on:
+  pull_request:
+    paths: ["packages/x402/**", "packages/shared/**", ".github/workflows/payment.yml"]
+  push:
+    branches: [main]
+    paths: ["packages/x402/**", "packages/shared/**"]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/x402
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: packages/x402/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
