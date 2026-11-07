@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { SessionBar } from "@/components/session-bar";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -21,14 +22,20 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                 Ship<span className="text-brand">Lock</span>
               </span>
             </Link>
-            <nav className="text-sm text-muted">
+            <nav className="flex gap-2 text-sm text-muted">
               <Link href="/" className="rounded-lg bg-panel-2 px-3 py-1.5 text-white">
                 Pull requests
               </Link>
+              <Link href="/maintainer" className="rounded-lg px-3 py-1.5 hover:text-white">
+                Maintainer
+              </Link>
             </nav>
-            <p className="ml-auto hidden text-sm text-muted sm:block">
-              AI writes. <span className="text-approve">Humans ship.</span>
-            </p>
+            <div className="ml-auto flex items-center gap-6">
+              <p className="hidden text-sm text-muted lg:block">
+                AI writes. <span className="text-approve">Humans ship.</span>
+              </p>
+              <SessionBar />
+            </div>
           </div>
         </header>
         <main className="mx-auto max-w-6xl px-6 py-8">{children}</main>

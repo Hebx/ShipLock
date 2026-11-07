@@ -64,17 +64,101 @@ export interface ReviewDetail {
   job: JobSummary;
   localReport: { stats: { filesChanged: number; additions: number; deletions: number; binaryFiles: number }; limitations: string[] } | null;
   findings: Finding[];
-  paidReview: null | {
-    hedera_transaction_id: string;
-    amount_base_units: string;
-    merchant_account_id: string;
-    payer_account_id: string;
-    evidence_kind: "live" | "test" | "simulated";
-    report_sha256: string;
-    ledger_verified_at: string | null;
-  };
+  paidReview: PaidReview | null;
+  authorization: Authorization | null;
+  mergeAttempt: MergeAttempt | null;
   otherHeads: JobSummary[];
   events: Array<{ id: number; at: string; type: string; detail: Record<string, unknown> }>;
+}
+
+export interface PaidReview {
+  hederaTransactionId: string;
+  amountTinybar: string;
+  payerAccountId: string;
+  merchantAccountId: string;
+  evidenceKind: "live" | "test" | "simulated";
+  reportSha256: string;
+  reportConclusion: "pass" | "block" | "inconclusive";
+  ledgerVerifiedAt: string | null;
+  /** Only set for live evidence confirmed on the mirror node. */
+  hashscanUrl: string | null;
+}
+
+export type WorldEnvironment = "production" | "staging";
+
+export interface MergeOperation {
+  schema: string;
+  action: "merge_pull_request";
+  authorizationId: string;
+  repositoryId: number;
+  repository: string;
+  pullNumber: number;
+  headSha: string;
+  baseRef: string;
+  reportSha256: string;
+  scannerVersion: string;
+  paidReviewEvidenceKind: PaidReview["evidenceKind"];
+  mergeMethod: "merge" | "squash" | "rebase";
+  approverGithubLogin: string;
+  approverGithubUserId: number;
+  worldEnvironment: WorldEnvironment;
+  worldRpId: string;
+  nonce: string;
+  expiresAt: string;
+}
+
+export interface Authorization {
+  id: string;
+  status: "pending" | "approved" | "denied" | "expired" | "consumed" | "invalidated";
+  statusReason: string | null;
+  operationHash: string;
+  operation: MergeOperation;
+  approverGithubLogin: string | null;
+  worldEnvironment: WorldEnvironment | null;
+  expiresAt: string;
+  approvedAt: string | null;
+  consumedAt: string | null;
+  createdAt: string;
+}
+
+export interface MergeAttempt {
+  authorizationId: string;
+  expectedSha: string;
+  status: "in_progress" | "merged" | "blocked" | "failed" | "uncertain";
+  githubHttpStatus: number | null;
+  mergeCommitSha: string | null;
+  mergeUrl: string | null;
+  reason: string | null;
+  startedAt: string;
+  completedAt: string | null;
+}
+
+export interface SessionInfo {
+  authenticated: boolean;
+  githubOAuthConfigured: boolean;
+  world: { configured: false } | { configured: true; environment: WorldEnvironment; appId: `app_${string}`; requireUserPresence: boolean };
+  github?: { login: string; id: number };
+  csrfToken?: string;
+  worldEnrollment?: { id: string; environment: WorldEnvironment; enrolledAt: string } | null;
+}
+
+/** Server-issued World request parameters. The RP signature is created server-side only. */
+export interface WorldRequest {
+  requestId: string;
+  app_id: `app_${string}`;
+  environment: WorldEnvironment;
+  rp_context: { rp_id: string; nonce: string; created_at: number; expires_at: number; signature: string };
+  signal: string;
+  require_user_presence: boolean;
+}
+
+export interface EnrollmentRequest extends WorldRequest {
+  action: string;
+  allow_legacy_proofs: false;
+}
+
+export interface ApprovalRequest extends WorldRequest {
+  existing_session_id: `session_${string}`;
 }
 
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: string };

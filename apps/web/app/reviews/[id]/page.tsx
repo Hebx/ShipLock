@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { HumanCheckpoint } from "@/components/human-checkpoint";
 import { Card, ErrorPanel, EvidenceTag, Sha, SeverityPill, StateBadge } from "@/components/ui";
 import { getReview } from "@/lib/api";
 
@@ -17,7 +18,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
   if (!result.ok && result.error === "not_found") notFound();
   if (!result.ok) return <ErrorPanel message={result.error} />;
 
-  const { job, localReport, findings, paidReview, otherHeads, events } = result.data;
+  const { job, localReport, findings, paidReview, authorization, mergeAttempt, otherHeads, events } = result.data;
   const local = findings.filter((f) => f.source === "local");
   const ghBase = `https://github.com/${job.repository}`;
 
@@ -108,26 +109,31 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
       </Card>
 
       <div className="grid gap-6 md:grid-cols-3">
-        <Card title="Paid review" aside={<EvidenceTag kind={paidReview ? paidReview.evidence_kind : "none"} />}>
+        <Card title="Paid review" aside={<EvidenceTag kind={paidReview ? paidReview.evidenceKind : "none"} />}>
           {paidReview ? (
             <dl className="space-y-2 text-sm">
               <dt className="text-muted">Hedera transaction</dt>
-              <dd className="font-mono text-xs break-all">{paidReview.hedera_transaction_id}</dd>
+              <dd className="font-mono text-xs break-all">
+                {paidReview.hashscanUrl ? (
+                  <a href={paidReview.hashscanUrl} target="_blank" rel="noreferrer">
+                    {paidReview.hederaTransactionId}
+                  </a>
+                ) : (
+                  paidReview.hederaTransactionId
+                )}
+              </dd>
               <dt className="text-muted">Amount</dt>
-              <dd className="font-mono">{paidReview.amount_base_units} tinybar</dd>
+              <dd className="font-mono">{paidReview.amountTinybar} tinybar</dd>
               <dt className="text-muted">Ledger check</dt>
-              <dd>{paidReview.ledger_verified_at ? "confirmed on mirror node" : "not independently confirmed"}</dd>
+              <dd>{paidReview.ledgerVerifiedAt ? "confirmed on mirror node" : "not independently confirmed"}</dd>
+              <dt className="text-muted">Paid conclusion</dt>
+              <dd>{CONCLUSION_LABEL[paidReview.reportConclusion]}</dd>
             </dl>
           ) : (
             <p className="text-sm text-muted">No paid review accepted for this commit.</p>
           )}
         </Card>
-        <Card title="Human checkpoint" aside={<EvidenceTag kind="none" />}>
-          <p className="text-sm text-muted">World ID Agent Pass authorization is not available until a paid review is confirmed.</p>
-        </Card>
-        <Card title="Merge" aside={<EvidenceTag kind="none" />}>
-          <p className="text-sm text-muted">No merge attempted. ShipLock merges only the approved SHA.</p>
-        </Card>
+        <HumanCheckpoint jobId={job.id} jobState={job.state} paidReview={paidReview} authorization={authorization} mergeAttempt={mergeAttempt} />
       </div>
 
       <Card title="Evidence timeline">
