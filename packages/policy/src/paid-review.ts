@@ -16,6 +16,8 @@ export interface PaidReviewExpectations {
   allowedEvidenceKinds: readonly EvidenceKind[];
   /** Digest ShipLock computed itself from the same SHA-pinned diff, when available. */
   independentReportSha256?: string;
+  /** sha256 of the diff bytes ShipLock analyzed; the paid report must have reviewed the same bytes. */
+  diffSha256?: string;
 }
 
 export type PaidReviewVerdict =
@@ -53,6 +55,9 @@ export function verifyPaidReviewResult(
   check(rep.headSha === job.headSha, "report head SHA mismatch");
   check(rep.baseSha === job.baseSha, "report base SHA mismatch");
   check(rep.scannerVersion === job.scannerVersion, "report scanner version mismatch");
+  if (expect.diffSha256 !== undefined) {
+    check(rep.diffSha256 === expect.diffSha256, "report reviewed a different diff");
+  }
   check(canonicalSha256(rep) === r.reportSha256, "report digest does not match report content");
   if (expect.independentReportSha256 !== undefined) {
     check(r.reportSha256 === expect.independentReportSha256, "report digest differs from ShipLock's independent analysis");

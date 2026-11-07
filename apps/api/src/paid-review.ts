@@ -52,6 +52,7 @@ export function registerPaidReviewRoutes(app: Hono<AppEnv>, deps: AppDeps, requi
       maxTinybar: cfg.maxTinybar,
       allowedEvidenceKinds: cfg.acceptedEvidence,
       independentReportSha256: job.local_report_sha256,
+      diffSha256: job.diff_sha256 ?? undefined,
     });
     if (!verdict.ok) {
       recordEvent(deps.db, "paid_review.rejected", job.id, { reasons: verdict.reasons.join("; ").slice(0, 500) });

@@ -7,9 +7,38 @@ import {
   HexShaSchema,
   HederaTransactionIdSchema,
   InvalidTransitionError,
+  PurchaseReviewInputSchema,
+  ReviewQuoteBindingSchema,
   TERMINAL_STATES,
   TinybarSchema,
 } from "../src/index.ts";
+
+describe("payment-to-review boundary", () => {
+  const job = {
+    jobId: "job_1",
+    repositoryId: 42,
+    repository: "Hebx/shiplock-demo-target",
+    pullNumber: 1,
+    headSha: "a".repeat(40),
+    baseSha: "b".repeat(40),
+    scannerVersion: "shiplock-deterministic/0.1.0",
+  };
+
+  it("requires the full binding in a quote, with no extra fields", () => {
+    expect(ReviewQuoteBindingSchema.safeParse({ ...job, diffSha256: "c".repeat(64) }).success).toBe(true);
+    expect(ReviewQuoteBindingSchema.safeParse(job).success).toBe(false);
+    expect(ReviewQuoteBindingSchema.safeParse({ ...job, diffSha256: "c".repeat(64), price: "1" }).success).toBe(false);
+    expect(ReviewQuoteBindingSchema.safeParse({ ...job, headSha: "A".repeat(40), diffSha256: "c".repeat(64) }).success).toBe(false);
+  });
+
+  it("validates purchase input", () => {
+    const input = { job, expectedDiffSha256: "c".repeat(64), reviewUrl: "https://audit.example/audit?jobId=job_1", maxTinybar: "10000" };
+    expect(PurchaseReviewInputSchema.safeParse(input).success).toBe(true);
+    expect(PurchaseReviewInputSchema.safeParse({ ...input, maxTinybar: "1.5" }).success).toBe(false);
+    expect(PurchaseReviewInputSchema.safeParse({ ...input, reviewUrl: "file:///etc/passwd" }).success).toBe(false);
+    expect(PurchaseReviewInputSchema.safeParse({ ...input, expectedDiffSha256: undefined }).success).toBe(false);
+  });
+});
 
 describe("canonicalJson", () => {
   it("sorts keys recursively and drops undefined members", () => {

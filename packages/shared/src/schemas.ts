@@ -23,6 +23,15 @@ export const ReviewJobSchema = z.strictObject({
   scannerVersion: z.string().min(1).max(100),
 });
 
+export const ReviewQuoteBindingSchema = ReviewJobSchema.extend({ diffSha256: Sha256HexSchema });
+
+export const PurchaseReviewInputSchema = z.strictObject({
+  job: ReviewJobSchema,
+  expectedDiffSha256: Sha256HexSchema,
+  reviewUrl: z.url({ protocol: /^https?$/ }).max(2048),
+  maxTinybar: TinybarSchema,
+});
+
 export const ReviewFindingSchema = z.strictObject({
   ruleId: z.string().min(1).max(64),
   severity: z.enum(["info", "low", "medium", "high", "critical"]),

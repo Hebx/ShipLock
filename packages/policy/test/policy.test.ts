@@ -71,6 +71,13 @@ describe("verifyPaidReviewResult", () => {
     );
   });
 
+  it("rejects a self-consistent report over different diff bytes", () => {
+    const other = scanDiff(job, new TextEncoder().encode("diff --git a/b.md b/b.md\n--- a/b.md\n+++ b/b.md\n@@ -1 +1,2 @@\n x\n+z\n"));
+    const candidate = result({ report: other.report, reportSha256: other.reportSha256 });
+    const r = reasons(candidate, { ...expectLive, independentReportSha256: undefined, diffSha256: report.diffSha256 });
+    expect(r).toEqual(["report reviewed a different diff"]);
+  });
+
   it("rejects a stale report for a different head SHA", () => {
     const stale = scanDiff({ ...job, headSha: "3".repeat(40) }, diff);
     const r = reasons(result({ report: stale.report, reportSha256: stale.reportSha256 }));

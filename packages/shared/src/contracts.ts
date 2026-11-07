@@ -78,9 +78,21 @@ export interface PaidReviewResult {
   scannerVersion: string;
 }
 
+/**
+ * The immutable revision a review purchase is bound to. The merchant's 402 quote must carry
+ * exactly this object as `extra.shiplock`; the buyer refuses to sign any quote where it differs.
+ */
+export interface ReviewQuoteBinding extends ReviewJob {
+  /** sha256 of the GitHub `compare/{baseSha}...{headSha}` diff bytes, as computed by ShipLock. */
+  diffSha256: string;
+}
+
 export interface PurchaseReviewInput {
   job: ReviewJob;
+  /** ShipLock's own digest of the job's diff; the purchased report must carry the same value. */
+  expectedDiffSha256: string;
   reviewUrl: string;
+  /** Spend cap for this purchase in tinybar, decimal integer string. */
   maxTinybar: string;
 }
 
