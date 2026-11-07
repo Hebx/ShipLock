@@ -99,7 +99,26 @@ These ran against real infrastructure. You can check every link yourself. The de
 For each transaction, the mirror node shows `SUCCESS`, the payer debited 1000 tinybar and the merchant credited 1000 tinybar. Payer `0.0.7304745`, merchant `0.0.9050506`, fee payer `0.0.7162784` (Blocky402). Full write-up: [Gate C payment evidence](docs/evidence/integration/gate-c-payment.md).
 
 - **World ID 4.0, production:** a real World App enrollment was verified server-side by World ([evidence](docs/evidence/world/production-enrollment.md)). The owner's identity matched only once Selfie Check was accepted, so the credential was most likely **Selfie Check**, a lower assurance level than Orb. ShipLock does not yet record the credential type.
-- **In progress:** the World ID approval of a specific SHA and the SHA-guarded merge. **No merge through ShipLock has happened yet.** Live status lives in [docs/PROGRESS.md](docs/PROGRESS.md).
+- **World approval + SHA-guarded merge, production:** a cancelled approval (`world_cancelled:closed`) reached no merge. Then an approval whose World proof signs operation hash `07e16707…` merged [demo PR #1](https://github.com/Hebx/shiplock-demo-target/pull/1) at exactly the reviewed and paid head `953ab250…` → squash commit [`5132381c`](https://github.com/Hebx/shiplock-demo-target/commit/5132381cd54db4a2c392014f75d02cd1a42bef74) ([evidence](docs/evidence/integration/live-approval-and-merge.md)).
+
+### Live vs unit-tested
+
+| Capability | Live | Unit-tested only |
+|---|---|---|
+| Agent buys a review via x402 on Hedera testnet; mirror-node confirmation | ✅ 3 txs above | |
+| Paid report digest == ShipLock's own scan of the exact diff | ✅ demo PRs #1, #2 | |
+| New commit → old paid review retired, new head re-paid | ✅ PR #1 `d0cbdfd3…` → `953ab250…` | |
+| World ID production enrollment (server-verified) | ✅ | |
+| Cancelled World approval → no merge | ✅ | |
+| Approved exact SHA → SHA-guarded merge | ✅ `953ab250…` → `5132381c` | |
+| Repo rulesets: PR + required check, no bypass | ✅ [REPO_PROTECTION](docs/evidence/github/REPO_PROTECTION.md) | |
+| New commit pushed **after approval** → blocked | | ✅ `apps/api/test/merge.test.ts` |
+| Expired / reused authorization, proof or nullifier replay | | ✅ `approval.test.ts`, `merge.test.ts` |
+| Non-maintainer with a valid World proof | | ✅ `maintainer.test.ts` |
+| Failing required check, concurrent or repeated merge | | ✅ `merge.test.ts` |
+| Mismatched report, failed or unsupported payment | | ✅ `paid-review.test.ts`, `packages/x402` |
+
+**Not claimed:** ShipLock is not the only merge path on the demo repo, since a write collaborator can merge after `typecheck` passes. The audit merchant is not publicly reachable. The World credential used was most likely Selfie Check, not Orb.
 
 ## 🚀 How to use
 

@@ -40,3 +40,21 @@ The check comes from `.github/workflows/ci.yml` (merged via demo PR #3 → `main
 Demo PRs #1 and #2 were opened before the workflow existed. Their heads (`d0cbdfd3…`, `67969975…`) have no `typecheck` run, so GitHub blocks merging them (`mergeable_state: blocked`). To demo:
 - **Success:** update `demo/clean-change` with `main` (merge or rebase). This produces a **new head SHA**, so ShipLock must re-review and re-pay for that SHA, and CI runs on it.
 - **Required-check failure:** push a commit with a type error to a demo branch; `typecheck` fails and both GitHub and ShipLock (`checks_not_green`) block.
+
+## Product repo: `Hebx/ShipLock` default branch (live, re-checked 2026-11-07)
+
+Ruleset `shiplock-main` (id `26742382`), **active**, **no bypass actors**. Target: `~DEFAULT_BRANCH`. It moved with the
+rename from `cursor/integration`, so it now protects **`release/v0.1`**.
+
+| Rule | Effect |
+|---|---|
+| `pull_request` (0 approvals) | No direct pushes to `release/v0.1` |
+| `required_status_checks`: `verify` from GitHub Actions (`integration_id` 15368) | `.github/workflows/ci.yml` (typecheck + all tests) must pass on the PR head |
+| `non_fast_forward`, `deletion` | No force-push or deletion of `release/v0.1` |
+
+Raw: [`shiplock-ruleset.json`](shiplock-ruleset.json). `GET /repos/Hebx/ShipLock/rules/branches/release%2Fv0.1` →
+`deletion, non_fast_forward, pull_request, required_status_checks:verify`. When the ruleset was created (default
+branch was `main`) a direct push to `main` was rejected with `GH013`.
+
+**`main` is not protected now** (`GET /rules/branches/main` → `[]`). It is the pre-release seed branch. If it must stay
+frozen, add `refs/heads/main` to the ruleset's `include` list (owner decision; not done).
