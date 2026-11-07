@@ -17,6 +17,19 @@ digests) → x402 `GET /audit` → 402 quote with `extra.shiplock` = job + diff 
 Payer `0.0.7304745`, merchant `0.0.9050506`, fee payer `0.0.7162784` (Blocky402). The paid digests equal ShipLock's
 independent M2 digests ([M2](../github/M2.md)).
 
+## New commit after review: old paid review retired, new head paid separately
+
+Hermes's ruleset ([REPO_PROTECTION](../github/REPO_PROTECTION.md)) requires a passing `typecheck`, which the original PR #1
+head lacked. `PUT /pulls/1/update-branch` with `expected_head_sha=d0cbdfd3…` moved the head to
+`953ab250afc264a1cc26db6dba62ca7f6735a7ed` (base `922bb609…`); `typecheck` passed and `mergeable_state` became `clean`.
+
+The next agent run made ShipLock re-read the PR: job `job_86332ff0…` (head `d0cbdfd3…`, paid with
+`0.0.7162784@1794015688.593589740`) went to `stale` ("head moved to 953ab250…") and its paid review no longer counts. A new
+job `job_e5aee42d…` was bound to `953ab250…` and paid with
+[`0.0.7162784@1794016014.583132223`](https://hashscan.io/testnet/transaction/0.0.7162784-1794016014-583132223)
+(mirror: SUCCESS, payer −1000, merchant +1000). Paid report `5ae673b8…2e68` equals ShipLock's own. The diff digest is
+unchanged (`e6ec27c0…`) because only the base moved; the report digest differs because it binds head and base.
+
 ## Failure found and fixed during the run
 
 The first submission for PR #1 was refused with `400 invalid_request`: ShipLock's `adapterId` pattern did not allow `/`, and
