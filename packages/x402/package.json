@@ -10,7 +10,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit -p .",
     "test": "vitest run",
-    "live": "tsx scripts/payment-live-e2e.ts"
+    "live": "tsx scripts/payment-live-e2e.ts",
+    "conformance": "tsx scripts/conformance.ts"
   },
   "dependencies": {
     "@hiero-ledger/sdk": "2.90.1",
