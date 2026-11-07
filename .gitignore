@@ -1,0 +1,26 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.pfx
+*.key
+.secrets/
+# Node and builds
+node_modules/
+.next/
+dist/
+build/
+coverage/
+.turbo/
+*.log
+# local data and caches
+data/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+.DS_Store
+.cursor/index/
+# local evidence containing sensitive payloads
+docs/evidence/raw/
