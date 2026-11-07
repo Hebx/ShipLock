@@ -1,0 +1,25 @@
+name: payment (packages/x402)
+on:
+  pull_request:
+    paths: ["packages/**", "apps/api/src/mirror-node.ts", "pnpm-lock.yaml", ".github/workflows/payment.yml"]
+  push:
+    branches: [main]
+    paths: ["packages/**", "pnpm-lock.yaml"]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @shiplock/x402 typecheck
+      - run: pnpm --filter @shiplock/x402 test

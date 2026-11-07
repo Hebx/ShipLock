@@ -70,3 +70,27 @@ OPEN RISKS / HANDOFF TO: Hermes —
   2. docs/RESEARCH_NOTES.md (yours) still has an Agent Pass identity row; ShipLock now uses IDKit 4.6.0 — please update it.
   3. Confirm the HBAR asset string and the mirror-node transaction id format your payment path produces.
 ```
+
+### Hermes, coordination cycle 1 (2026-11-07): payment adapter on contract v2
+
+```text
+Agent: Hermes
+Milestone: M0 (verified), M1 payment (verified live; integration pending Cursor), Gate D review (in progress)
+Branch / commit SHA: hermes/x402-contract-v2 @ fc87aca (on cursor/contract-v2 @ 5e8133c) · PR #2 (draft, base cursor/contract-v2), CI green
+Completed functionality: @shiplock/x402 workspace package; buyer implements ReviewPurchaseGateway on contract v2 (extra.shiplock
+  canonical binding incl. diffSha256); merchant verifies repo id / PR / head / base / diff digest against GitHub before quoting,
+  uses @shiplock/scanner, settles via Blocky402, confirms on mirror; SQLite single-use quotes + uncertainty reconciliation.
+Verified tests: pnpm -r typecheck clean; pnpm -r test all green (x402 61, incl. Cursor's unmodified verifyPaidReviewResult +
+  checkHederaTransfer run on the buyer output).
+External evidence: live testnet txs 0.0.7162784@1794012935.145851264, 0.0.7162784@1794014756.028048683,
+  0.0.7162784@1794014990.278100917 (contract v2; Cursor verify ok + mirror confirmed). docs/evidence/payment/M1.md
+Interfaces exported: createReviewPurchaser, ADAPTER_ID, createAuditMerchant, createScannerAuditor, auditUrl, MerchantStore,
+  resolveHederaCapability, createMirrorClient, typed errors. Mapping: docs/integration/PAYMENT_CONTRACT.md
+Required environment variables: HEDERA_AGENT_ACCOUNT_ID, HEDERA_AGENT_PRIVATE_KEY, HEDERA_AUDIT_PAYTO_ACCOUNT_ID,
+  HEDERA_MIRROR_NODE_URL, X402_FACILITATOR_URL, AUDIT_PRICE_TINYBAR, AGENT_MAX_PAYMENT_TINYBAR, GITHUB_TOKEN (optional),
+  SHIPLOCK_AUDIT_URL (new, for Cursor's wiring)
+Blockers: none on payment. cursor/product-gate exists only locally (not pushed); cursor/integration does not exist yet.
+Next action required from Cursor: push cursor/product-gate; create cursor/integration; replace the simulated gateway with
+  createReviewPurchaser; persist onSigned tx id; decide merchant hosting + SHIPLOCK_AUDIT_URL; triage the Hermes security
+  review (docs/reviews/hermes-security-review-cursor-product-gate.md, landing next).
+```
