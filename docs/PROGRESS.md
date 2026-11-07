@@ -2,9 +2,9 @@
 
 | Milestone | State | Owner | Branch/commit | Proof | Blockers |
 |---|---|---|---|---|---|
-| M0 research | Not started | Hermes | — | — | — |
+| M0 research | Verified | Hermes | `hermes/hedera-x402` | [RESEARCH_NOTES](RESEARCH_NOTES.md) | — |
 | App foundation (DB, schemas, state machine, API, UI) | In progress — foundation tests pass | Cursor | `cursor/product-gate` | [app-foundation.md](evidence/app-foundation.md) §1 | — |
-| M1 paid x402 | Not started | Hermes | — | — | — |
+| M1 paid x402 | Verified (payment subsystem, live testnet); app integration pending | Hermes | `hermes/hedera-x402` (PR #1) | [M1 evidence](evidence/payment/M1.md), tx `0.0.7162784@1794012935.145851264` | Adapter must emit Cursor's v2 `PaidReviewResult` (in progress: `hermes/x402-contract-v2`) |
 | M2 SHA-bound audit | In progress — scanner + SHA binding implemented; live read smoke only | Cursor | `cursor/product-gate` | [app-foundation.md](evidence/app-foundation.md) §2 (not M2 exit) | Disposable `Hebx/shiplock-demo-target` repo does not exist yet |
 | M3 World ID (IDKit) + GitHub maintainer | In progress — implemented, unit-tested only (stubbed World verify); never run against World | Cursor | `cursor/product-gate` | runbook: [world/README.md](evidence/world/README.md) (no evidence yet) | World Developer Portal app values (`app_id`, `rp_id`, signing key) + staging action; GitHub OAuth App; cross-agent security review |
 | M4 GitHub merge | In progress — executor implemented, unit-tested against in-memory GitHub; no real merge | Cursor | `cursor/product-gate` | — | Demo repo + fine-grained token; live paid review (M1); cross-agent security review |
