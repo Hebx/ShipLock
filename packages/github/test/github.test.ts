@@ -122,10 +122,17 @@ describe("GitHub client", () => {
     await expect(gh.getCollaboratorPermission(REPO, "../admin")).rejects.toThrow();
   });
 
+  it("does not rank custom roles named after Object.prototype keys", () => {
+    for (const roleName of ["constructor", "toString", "valueOf", "__proto__", "hasOwnProperty"]) {
+      expect(permissionRank({ permission: "read", roleName })).toBe(1);
+    }
+    expect(permissionRank({ permission: "constructor", roleName: "constructor" })).toBe(0);
+  });
+
   it("reads check runs, combined status and branch rules for an exact SHA", async () => {
     const f = fakeFetch((url) => {
       if (url.endsWith(`/commits/${HEAD}/check-runs?per_page=100`)) {
-        return Response.json({ total_count: 1, check_runs: [{ name: "ci", status: "completed", conclusion: "success", app: { slug: "github-actions" } }] });
+        return Response.json({ total_count: 1, check_runs: [{ name: "ci", status: "completed", conclusion: "success", app: { id: 15368, slug: "github-actions" } }] });
       }
       if (url.endsWith(`/commits/${HEAD}/status?per_page=100`)) return Response.json({ state: "pending", total_count: 0, statuses: [] });
       if (url.endsWith(`/rules/branches/main?per_page=100`)) {
@@ -134,7 +141,7 @@ describe("GitHub client", () => {
       return new Response("", { status: 404 });
     });
     const gh = createGitHubClient({ allowlist: [REPO], fetch: f });
-    expect(await gh.listCheckRuns(REPO, HEAD)).toEqual([{ name: "ci", status: "completed", conclusion: "success", appSlug: "github-actions" }]);
+    expect(await gh.listCheckRuns(REPO, HEAD)).toEqual([{ name: "ci", status: "completed", conclusion: "success", appSlug: "github-actions", appId: 15368 }]);
     expect(await gh.getCombinedStatus(REPO, HEAD)).toEqual({ state: "pending", totalCount: 0, statuses: [] });
     expect((await gh.getBranchRules(REPO, "main"))[0]!.type).toBe("required_status_checks");
     await expect(gh.getBranchRules(REPO, "../x")).rejects.toThrow();

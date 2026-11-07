@@ -176,7 +176,7 @@ export function HumanCheckpoint({ jobId, jobState, paidReview, authorization, me
               Merge {authorization.operation.headSha.slice(0, 12)}
             </button>
           )}
-          {!gate && mergeAttempt?.status === "uncertain" && (
+          {!gate && (mergeAttempt?.status === "uncertain" || mergeAttempt?.status === "in_progress") && (
             <button
               onClick={async () => {
                 await post(`/api/merges/${mergeAttempt.authorizationId}/reconcile`);

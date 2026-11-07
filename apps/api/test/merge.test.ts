@@ -1,5 +1,5 @@
 import { MergeOutcomeUnknownError, type GitHubClient } from "@shiplock/github";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { getJob } from "../src/store.ts";
 import { MERGE_SHA, REPO, SHA2, SHA3, setup, testConfig } from "./harness.ts";
 
@@ -67,10 +67,11 @@ describe("merge executor (unit, in-memory GitHub)", () => {
 
   it("failed or pending check runs, failing statuses and missing required checks block the merge", async () => {
     const cases: Array<[(gh: ReturnType<typeof setup>["gh"]) => void, RegExp]> = [
-      [(gh) => (gh.checkRuns = [{ name: "ci", status: "completed", conclusion: "failure", appSlug: null }]), /^checks_not_green:ci/],
-      [(gh) => (gh.checkRuns = [{ name: "ci", status: "in_progress", conclusion: null, appSlug: null }]), /^checks_not_green:ci/],
+      [(gh) => (gh.checkRuns = [{ name: "ci", status: "completed", conclusion: "failure", appSlug: null, appId: null }]), /^checks_not_green:ci/],
+      [(gh) => (gh.checkRuns = [{ name: "ci", status: "in_progress", conclusion: null, appSlug: null, appId: null }]), /^checks_not_green:ci/],
       [(gh) => (gh.combined = { state: "failure", totalCount: 1, statuses: [{ context: "lint", state: "failure" }] }), /^commit_status_failure$/],
       [(gh) => (gh.checkRuns = []), /^required_checks_missing:ci$/],
+      [(gh) => (gh.checkRuns = [{ name: "ci", status: "completed", conclusion: "success", appSlug: "impostor", appId: 999 }]), /^required_checks_missing:ci$/],
       [(gh) => (gh.mergeable = false), /^not_mergeable$/],
     ];
     for (const [mutate, reason] of cases) {
@@ -128,6 +129,17 @@ describe("merge executor (unit, in-memory GitHub)", () => {
     expect(t.gh.mergeCalls).toHaveLength(0);
   });
 
+  it("staging World proofs cannot merge unless development merges are enabled; nothing is consumed", async () => {
+    const t = setup(testConfig({ allowDevelopmentMerge: false }));
+    const { jobId, session, created } = await t.approvedAuthorization();
+    const res = await t.call("POST", `/api/merges/${created.authorization.id}/execute`, { session });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ error: "development_evidence_cannot_merge", detail: { worldEnvironment: "staging", paidReviewEvidenceKind: "live" } });
+    expect(t.gh.mergeCalls).toHaveLength(0);
+    expect(getJob(t.db, jobId)!.state).toBe("approved");
+    expect(t.db.prepare("SELECT status FROM merge_authorizations").get()!.status).toBe("approved");
+  });
+
   it("405/422 from GitHub are recorded as blocked with the status", async () => {
     const t = setup();
     const { session, created } = await t.approvedAuthorization();
@@ -153,6 +165,47 @@ describe("merge executor (unit, in-memory GitHub)", () => {
     expect(done).toMatchObject({ jobState: "merged", mergeAttempt: { status: "merged", mergeCommitSha: MERGE_SHA, reason: "reconciled" } });
     expect(t.gh.mergeCalls).toHaveLength(1);
     expect(getJob(t.db, jobId)!.state).toBe("merged");
+  });
+
+  it("an error after GitHub merged is recorded as uncertain and reconciled to merged", async () => {
+    const t = setup();
+    const { session, created } = await t.approvedAuthorization();
+    t.gh.onMerge = async () => {
+      t.gh.merged = true;
+      t.gh.state = "closed";
+      t.gh.mergeCommitSha = MERGE_SHA;
+      throw new Error("post-merge failure");
+    };
+    const body = (await (await t.call("POST", `/api/merges/${created.authorization.id}/execute`, { session })).json()) as Attempt;
+    expect(body).toMatchObject({ jobState: "merged", mergeAttempt: { status: "merged", reason: "reconciled" } });
+    expect(t.gh.mergeCalls).toHaveLength(1);
+  });
+
+  it("an attempt interrupted mid-merge is reconcilable only once stale, and never re-sent", async () => {
+    for (const githubMerged of [true, false]) {
+      const t = setup();
+      const { jobId, session, created } = await t.approvedAuthorization();
+      t.gh.onMerge = () => new Promise(() => {});
+      void t.call("POST", `/api/merges/${created.authorization.id}/execute`, { session });
+      await vi.waitFor(() => expect(t.gh.mergeCalls).toHaveLength(1));
+      const reconcile = () => t.call("POST", `/api/merges/${created.authorization.id}/reconcile`, { session });
+      expect(await (await reconcile()).json()).toEqual({ error: "nothing_to_reconcile" });
+
+      t.db.prepare("UPDATE merge_attempts SET started_at = '2000-01-01T00:00:00.000Z'").run();
+      if (githubMerged) {
+        t.gh.merged = true;
+        t.gh.state = "closed";
+        t.gh.mergeCommitSha = MERGE_SHA;
+      }
+      const body = (await (await reconcile()).json()) as Attempt;
+      expect(body).toMatchObject(
+        githubMerged
+          ? { jobState: "merged", mergeAttempt: { status: "merged", reason: "reconciled" } }
+          : { jobState: "paid_review_confirmed", mergeAttempt: { status: "blocked", reason: "merge_not_performed" } },
+      );
+      expect(getJob(t.db, jobId)!.state).toBe(body.jobState);
+      expect(t.gh.mergeCalls).toHaveLength(1);
+    }
   });
 
   it("an unknown outcome where the head moved resolves to stale", async () => {

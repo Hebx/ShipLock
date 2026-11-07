@@ -60,6 +60,8 @@ describe("verifyPaidReviewResult", () => {
   it("does not accept settlementConfirmed:true when anything else is wrong", () => {
     expect(reasons(result({ amountBaseUnits: "999" }))).toContain("amount differs from quote");
     expect(reasons(result({ merchantAccountId: "0.0.6666" }))).toContain("unexpected merchant");
+    expect(reasons(result({ payerAccountId: "0.0.7777" }), { ...expectLive, payerAccountId: "0.0.1001" })).toContain("payer is not the configured agent account");
+    expect(reasons(result(), { ...expectLive, payerAccountId: "0.0.1001" })).toEqual([]);
     expect(reasons(result({ asset: "0.0.456858" }))).toContain("unexpected asset");
     expect(reasons(result({ settlementConfirmed: false }))).toContain("settlement not confirmed");
     expect(reasons(result({ payerAccountId: "0.0.2002" }))).toContain("payer and merchant are the same account");

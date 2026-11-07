@@ -49,9 +49,9 @@ export class FakeGitHub implements GitHubClient {
     [MAINTAINER.login]: { userId: MAINTAINER.id, permission: "write", roleName: "write" },
     [OTHER.login]: { userId: OTHER.id, permission: "write", roleName: "write" },
   };
-  checkRuns: CheckRunSummary[] = [{ name: "ci", status: "completed", conclusion: "success", appSlug: "github-actions" }];
+  checkRuns: CheckRunSummary[] = [{ name: "ci", status: "completed", conclusion: "success", appSlug: "github-actions", appId: 15368 }];
   combined: CombinedStatus = { state: "success", totalCount: 1, statuses: [{ context: "lint", state: "success" }] };
-  rules: BranchRule[] = [{ type: "required_status_checks", parameters: { required_status_checks: [{ context: "ci" }] } }];
+  rules: BranchRule[] = [{ type: "required_status_checks", parameters: { required_status_checks: [{ context: "ci", integration_id: 15368 }] } }];
   /** Overrides the merge response; default enforces the `sha` precondition like GitHub. */
   onMerge?: (sha: string) => Promise<MergeOutcome>;
   mergeCalls: Array<{ sha: string; method: string }> = [];
@@ -117,7 +117,7 @@ export class FakeNetwork {
     Response.json({
       transactions: [
         {
-          transaction_id: id, consensus_timestamp: "1762480001.000000000", result: "SUCCESS", name: "CRYPTOTRANSFER", nonce: 0, scheduled: false,
+          transaction_id: id, consensus_timestamp: `${Math.floor(Date.now() / 1000) + 1}.000000000`, result: "SUCCESS", name: "CRYPTOTRANSFER", nonce: 0, scheduled: false,
           transfers: [{ account: PAYER, amount: -1000 }, { account: MERCHANT, amount: 1000 }, { account: "0.0.98", amount: 5 }],
         },
       ],
@@ -142,6 +142,7 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     githubOAuth: { clientId: "client-id", clientSecret: "client-secret" },
     minGithubPermission: "write",
     mergeMethod: "squash",
+    allowDevelopmentMerge: true,
     world: {
       appId: "app_staging_test",
       rpId: "rp_test",
@@ -155,6 +156,7 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
       network: "hedera:testnet",
       asset: "0.0.0",
       merchantAccountId: MERCHANT,
+      payerAccountId: PAYER,
       quotedTinybar: "1000",
       maxTinybar: "10000",
       acceptedEvidence: ["live"],

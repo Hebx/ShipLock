@@ -23,16 +23,24 @@ export function toMirrorTransactionId(txId: string): string {
   return `${m[1]}-${m[2]}-${m[3]}`;
 }
 
+/** Mirror consensus timestamp (`seconds.nanos`) as nanoseconds since the epoch. */
+function consensusNanos(ts: string): bigint | null {
+  const m = /^([0-9]{1,12})\.([0-9]{1,9})$/.exec(ts);
+  return m ? BigInt(m[1]!) * 1_000_000_000n + BigInt(m[2]!.padEnd(9, "0")) : null;
+}
+
 /**
  * Independent ledger confirmation of a paid review: the transaction succeeded and moved exactly
  * `amount` tinybar from the payer into the merchant account. The facilitator pays the network fee in
  * the x402 exact scheme, so any other net movement on the payer means extra transfers were bundled in.
+ * `notBefore` rejects transfers that reached consensus before the review job existed, so an older
+ * payment from the same agent cannot be paired with a new job.
  * Not-yet-indexed or unreachable is `unknown`, never a failure and never a success.
  */
 export async function checkHederaTransfer(
   doFetch: typeof fetch,
   mirrorBaseUrl: string,
-  expect: { transactionId: string; payer: string; merchant: string; amountTinybar: string },
+  expect: { transactionId: string; payer: string; merchant: string; amountTinybar: string; notBefore?: Date },
 ): Promise<LedgerCheck> {
   const id = toMirrorTransactionId(expect.transactionId);
   let res: Response;
@@ -58,5 +66,10 @@ export async function checkHederaTransfer(
   const amount = BigInt(expect.amountTinybar);
   if (net(expect.merchant) !== amount) return { kind: "mismatch", reason: "ledger_merchant_amount_mismatch" };
   if (net(expect.payer) !== -amount) return { kind: "mismatch", reason: "ledger_payer_debit_mismatch" };
+  if (expect.notBefore) {
+    const at = consensusNanos(tx.consensus_timestamp);
+    if (at === null) return { kind: "unknown", reason: "mirror_unparseable" };
+    if (at < BigInt(expect.notBefore.getTime()) * 1_000_000n) return { kind: "mismatch", reason: "ledger_transfer_before_job" };
+  }
   return { kind: "confirmed", consensusTimestamp: tx.consensus_timestamp };
 }

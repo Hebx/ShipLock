@@ -26,7 +26,7 @@ import {
   StaleHeadError,
 } from "./store.ts";
 
-export type AppConfig = Pick<Config, "appUrl" | "githubOAuth" | "world" | "paidReview" | "minGithubPermission" | "mergeMethod">;
+export type AppConfig = Pick<Config, "appUrl" | "githubOAuth" | "world" | "paidReview" | "minGithubPermission" | "mergeMethod" | "allowDevelopmentMerge">;
 
 export interface AppDeps extends ReviewDeps {
   github: GitHubClient;

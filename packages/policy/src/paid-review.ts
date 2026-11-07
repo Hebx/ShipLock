@@ -10,6 +10,8 @@ export interface PaidReviewExpectations {
   network: "hedera:testnet";
   asset: string;
   merchantAccountId: string;
+  /** The agent account allowed to pay; any other payer is refused. */
+  payerAccountId?: string;
   /** Price issued in the original quote; the paid result must match it exactly. */
   quotedTinybar: string;
   maxTinybar: string;
@@ -70,6 +72,7 @@ export function verifyPaidReviewResult(
   check(amount === BigInt(expect.quotedTinybar), "amount differs from quote");
   check(amount <= BigInt(expect.maxTinybar), "amount exceeds spend cap");
   check(r.payerAccountId !== r.merchantAccountId, "payer and merchant are the same account");
+  if (expect.payerAccountId !== undefined) check(r.payerAccountId === expect.payerAccountId, "payer is not the configured agent account");
   check(r.settlementConfirmed, "settlement not confirmed");
   check(expect.allowedEvidenceKinds.includes(r.evidenceKind), `evidence kind ${r.evidenceKind} not accepted here`);
 

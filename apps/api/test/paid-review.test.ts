@@ -62,6 +62,27 @@ describe("paid review acceptance (unit, stubbed mirror node)", () => {
     expect(getJob(t.db, jobId)!.state).toBe("review_pending");
   });
 
+  it("refuses a payment from any account but the configured agent, or one made before the job existed", async () => {
+    const t = setup();
+    const jobId = await t.createJob();
+    const other = (await (await t.submitPaidReview(jobId, t.paidResult(jobId, { payerAccountId: "0.0.5555" }))).json()) as { detail: { reasons: string[] } };
+    expect(other.detail.reasons).toContain("payer is not the configured agent account");
+    t.net.mirror = (id) =>
+      Response.json({
+        transactions: [
+          {
+            transaction_id: id, consensus_timestamp: "1762480001.000000000", result: "SUCCESS", name: "CRYPTOTRANSFER", nonce: 0,
+            transfers: [{ account: PAYER, amount: -1000 }, { account: MERCHANT, amount: 1000 }],
+          },
+        ],
+      });
+    const old = await t.submitPaidReview(jobId);
+    expect(old.status).toBe(422);
+    expect(await old.json()).toMatchObject({ detail: { reasons: ["ledger_transfer_before_job"] } });
+    expect(t.db.prepare("SELECT count(*) AS n FROM payment_receipts").get()!.n).toBe(0);
+    expect(getJob(t.db, jobId)!.state).toBe("review_pending");
+  });
+
   it("keeps an unconfirmed transaction pending (not failed, not accepted) and confirms on retry", async () => {
     const t = setup();
     const jobId = await t.createJob();

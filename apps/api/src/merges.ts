@@ -13,6 +13,8 @@ import { getJob, getReceipt, newId, recordEvent, transitionJob } from "./store.t
 
 /** A human approval older than this cannot be executed even if the operation has not expired. */
 export const APPROVAL_MAX_AGE_MS = 10 * 60 * 1000;
+/** Longer than any execute request can run (bounded GitHub timeouts); an older `in_progress` attempt was interrupted. */
+export const INTERRUPTED_ATTEMPT_MS = 5 * 60 * 1000;
 const PASSING_CONCLUSIONS = new Set(["success", "neutral", "skipped"]);
 
 export interface MergeAttemptRow {
@@ -98,14 +100,18 @@ async function preMergeChecks(deps: AppDeps, op: MergeOperation, session: Sessio
     const failing = runs.filter((r) => r.status !== "completed" || !PASSING_CONCLUSIONS.has(r.conclusion ?? ""));
     if (failing.length > 0) throw new Blocked(`checks_not_green:${failing.map((r) => r.name).join(",").slice(0, 200)}`);
     if (status.totalCount > 0 && status.state !== "success") throw new Blocked(`commit_status_${status.state}`);
-    const passed = new Set([
-      ...runs.filter((r) => PASSING_CONCLUSIONS.has(r.conclusion ?? "")).map((r) => r.name),
-      ...status.statuses.filter((s) => s.state === "success").map((s) => s.context),
-    ]);
+    const passingRuns = runs.filter((r) => PASSING_CONCLUSIONS.has(r.conclusion ?? ""));
+    const passedStatuses = new Set(status.statuses.filter((s) => s.state === "success").map((s) => s.context));
+    // A check pinned to a GitHub App must come from that app; commit statuses carry no app id.
+    const satisfied = (ctx: string, app: unknown) =>
+      typeof app === "number"
+        ? passingRuns.some((r) => r.name === ctx && r.appId === app)
+        : passingRuns.some((r) => r.name === ctx) || passedStatuses.has(ctx);
     for (const rule of rules) {
       if (rule.type !== "required_status_checks") continue;
-      const required = (rule.parameters as { required_status_checks?: Array<{ context?: unknown }> } | undefined)?.required_status_checks ?? [];
-      const missing = required.map((r) => String(r.context)).filter((ctx) => !passed.has(ctx));
+      const required =
+        (rule.parameters as { required_status_checks?: Array<{ context?: unknown; integration_id?: unknown }> } | undefined)?.required_status_checks ?? [];
+      const missing = required.filter((r) => !satisfied(String(r.context), r.integration_id)).map((r) => String(r.context));
       if (missing.length > 0) throw new Blocked(`required_checks_missing:${missing.join(",").slice(0, 200)}`);
     }
   } catch (err) {
@@ -115,8 +121,12 @@ async function preMergeChecks(deps: AppDeps, op: MergeOperation, session: Sessio
   return pr;
 }
 
-/** Resolves an unknown merge outcome by reading the PR. Never re-sends the merge. */
-async function reconcile(deps: AppDeps, attempt: MergeAttemptRow, op: MergeOperation) {
+/**
+ * Resolves an unknown merge outcome by reading the PR. Never re-sends the merge. `interrupted` =
+ * no execute request is still running for this attempt, so an open, unmerged PR at the approved
+ * head means the merge did not happen.
+ */
+async function reconcile(deps: AppDeps, attempt: MergeAttemptRow, op: MergeOperation, interrupted = false) {
   const ids = { id: attempt.id, jobId: attempt.review_job_id, authorizationId: attempt.authorization_id };
   const pr = await deps.github.getPullRequest(op.repository, op.pullNumber).catch(() => null);
   if (!pr) return;
@@ -130,8 +140,10 @@ async function reconcile(deps: AppDeps, attempt: MergeAttemptRow, op: MergeOpera
     finish(deps, ids, "failed", "failed", { reason: "pull_request_closed" });
   } else if (pr.headSha !== op.headSha) {
     finish(deps, ids, "blocked", "stale", { reason: "head_sha_changed" });
+  } else if (interrupted) {
+    finish(deps, ids, "blocked", "paid_review_confirmed", { reason: "merge_not_performed" });
   }
-  // Open, same head, not merged: still unknown. Stay reconcile_required.
+  // Otherwise open, same head, not merged: still unknown. Stay reconcile_required.
 }
 
 export function registerMergeRoutes(app: Hono<AppEnv>, deps: AppDeps): void {
@@ -151,6 +163,11 @@ export function registerMergeRoutes(app: Hono<AppEnv>, deps: AppDeps): void {
       if (!auth.approved_at || Date.now() - Date.parse(auth.approved_at) > APPROVAL_MAX_AGE_MS) throw new ApiError(409, "approval_not_fresh");
       const job = getJob(deps.db, auth.review_job_id)!;
       if (job.state !== "approved" || job.head_sha !== op.headSha) throw new ApiError(409, "job_not_approved", { state: job.state });
+      // Staging World proofs are not real human verification; test payments are not real settlement.
+      const development = op.worldEnvironment !== "production" || op.paidReviewEvidenceKind !== "live";
+      if (development && !deps.config.allowDevelopmentMerge) {
+        throw new ApiError(409, "development_evidence_cannot_merge", { worldEnvironment: op.worldEnvironment, paidReviewEvidenceKind: op.paidReviewEvidenceKind });
+      }
 
       const consumed = deps.db
         .prepare("UPDATE merge_authorizations SET status = 'consumed', consumed_at = ?, updated_at = ? WHERE id = ? AND status = 'approved'")
@@ -161,7 +178,7 @@ export function registerMergeRoutes(app: Hono<AppEnv>, deps: AppDeps): void {
         .prepare("INSERT INTO merge_attempts (id, authorization_id, review_job_id, expected_sha, status, started_at) VALUES (?, ?, ?, ?, 'in_progress', ?)")
         .run(attemptId, auth.id, job.id, op.headSha, now());
       transitionJob(deps.db, job.id, "merge_in_progress", "approval consumed");
-      recordEvent(deps.db, "merge.started", job.id, { authorizationId: auth.id, expectedSha: op.headSha }, auth.id);
+      recordEvent(deps.db, "merge.started", job.id, { authorizationId: auth.id, expectedSha: op.headSha, developmentEvidence: development }, auth.id);
       return { op, ids: { id: attemptId, jobId: job.id, authorizationId: auth.id } };
     });
     const { op, ids } = claimed;
@@ -195,8 +212,9 @@ export function registerMergeRoutes(app: Hono<AppEnv>, deps: AppDeps): void {
         finish(deps, ids, "failed", "failed", { reason: `github_http_${outcome.httpStatus}`, httpStatus: outcome.httpStatus });
       }
     } catch (err) {
-      if (!(err instanceof MergeOutcomeUnknownError)) throw err;
-      finish(deps, ids, "uncertain", "reconcile_required", { reason: err.detail });
+      // GitHub may have merged before this threw (unknown outcome, or recording the result failed).
+      // If recording `uncertain` fails too, the attempt stays in_progress and is reconciled as interrupted.
+      finish(deps, ids, "uncertain", "reconcile_required", { reason: err instanceof MergeOutcomeUnknownError ? err.detail : "merge_result_not_recorded" });
       await reconcile(deps, getMergeAttempt(deps, authorizationId)!, op);
     }
     return result();
@@ -208,8 +226,12 @@ export function registerMergeRoutes(app: Hono<AppEnv>, deps: AppDeps): void {
     if (!auth) throw new ApiError(404, "not_found");
     if (auth.github_user_id !== session.github_user_id) throw new ApiError(403, "not_your_authorization");
     const attempt = getMergeAttempt(deps, auth.id);
-    if (!attempt || attempt.status !== "uncertain") throw new ApiError(409, "nothing_to_reconcile");
-    await reconcile(deps, attempt, storedOperation(auth));
+    const interrupted = attempt !== undefined && attempt.status !== "merged" && Date.now() - Date.parse(attempt.started_at) > INTERRUPTED_ATTEMPT_MS;
+    if (!attempt || !(attempt.status === "uncertain" || (attempt.status === "in_progress" && interrupted))) throw new ApiError(409, "nothing_to_reconcile");
+    if (attempt.status === "in_progress") {
+      finish(deps, { id: attempt.id, jobId: attempt.review_job_id, authorizationId: auth.id }, "uncertain", "reconcile_required", { reason: "interrupted" });
+    }
+    await reconcile(deps, getMergeAttempt(deps, auth.id)!, storedOperation(auth), interrupted);
     return c.json({ mergeAttempt: publicMergeAttempt(getMergeAttempt(deps, auth.id)!), jobState: getJob(deps.db, auth.review_job_id)!.state });
   });
 }

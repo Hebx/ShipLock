@@ -28,6 +28,8 @@ const EnvSchema = z.object({
   /** Minimum repository role a maintainer needs to approve and merge. */
   SHIPLOCK_MIN_GITHUB_PERMISSION: z.enum(["write", "maintain", "admin"]).default("write"),
   SHIPLOCK_MERGE_METHOD: z.enum(["merge", "squash", "rebase"]).default("squash"),
+  /** Lets staging World proofs or non-live paid evidence drive a merge. Demo repositories only. */
+  SHIPLOCK_ALLOW_DEVELOPMENT_MERGE: bool.default(false),
 
   WORLD_APP_ID: z.string().regex(/^app_[A-Za-z0-9_]+$/).optional(),
   WORLD_RP_ID: z.string().regex(/^rp_[A-Za-z0-9_-]+$/).optional(),
@@ -40,6 +42,8 @@ const EnvSchema = z.object({
   HEDERA_NETWORK: z.literal("hedera:testnet").default("hedera:testnet"),
   HEDERA_MIRROR_NODE_URL: z.url().default("https://testnet.mirrornode.hedera.com"),
   HEDERA_AUDIT_PAYTO_ACCOUNT_ID: HederaAccountIdSchema.optional(),
+  /** The only account allowed to pay for reviews (the agent's x402 signer). */
+  HEDERA_AGENT_ACCOUNT_ID: HederaAccountIdSchema.optional(),
   /** x402 asset id for native HBAR. Must match what the merchant quotes (Hermes contract). */
   X402_HBAR_ASSET: z.string().min(1).max(64).default("0.0.0"),
   AUDIT_PRICE_TINYBAR: TinybarSchema.optional(),
@@ -67,6 +71,7 @@ export interface PaidReviewConfig {
   network: "hedera:testnet";
   asset: string;
   merchantAccountId: string;
+  payerAccountId: string;
   quotedTinybar: string;
   maxTinybar: string;
   acceptedEvidence: EvidenceKind[];
@@ -83,6 +88,7 @@ export interface Config {
   githubOAuth?: GitHubOAuthConfig;
   minGithubPermission: "write" | "maintain" | "admin";
   mergeMethod: "merge" | "squash" | "rebase";
+  allowDevelopmentMerge: boolean;
   world?: WorldConfig;
   paidReview?: PaidReviewConfig;
 }
@@ -118,11 +124,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     .filter(Boolean)
     .map((s) => EvidenceKindSchema.parse(s));
   const paidReview =
-    p.HEDERA_AUDIT_PAYTO_ACCOUNT_ID && p.AUDIT_PRICE_TINYBAR && p.AGENT_MAX_PAYMENT_TINYBAR
+    p.HEDERA_AUDIT_PAYTO_ACCOUNT_ID && p.HEDERA_AGENT_ACCOUNT_ID && p.AUDIT_PRICE_TINYBAR && p.AGENT_MAX_PAYMENT_TINYBAR
       ? {
           network: p.HEDERA_NETWORK,
           asset: p.X402_HBAR_ASSET,
           merchantAccountId: p.HEDERA_AUDIT_PAYTO_ACCOUNT_ID,
+          payerAccountId: p.HEDERA_AGENT_ACCOUNT_ID,
           quotedTinybar: p.AUDIT_PRICE_TINYBAR,
           maxTinybar: p.AGENT_MAX_PAYMENT_TINYBAR,
           acceptedEvidence,
@@ -143,6 +150,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
         : undefined,
     minGithubPermission: p.SHIPLOCK_MIN_GITHUB_PERMISSION,
     mergeMethod: p.SHIPLOCK_MERGE_METHOD,
+    allowDevelopmentMerge: p.SHIPLOCK_ALLOW_DEVELOPMENT_MERGE,
     world,
     paidReview,
   };

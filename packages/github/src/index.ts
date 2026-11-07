@@ -105,6 +105,8 @@ export interface CheckRunSummary {
   status: string;
   conclusion: string | null;
   appSlug: string | null;
+  /** GitHub App id that created the run; rulesets pin required checks to it as `integration_id`. */
+  appId: number | null;
 }
 
 export interface CombinedStatus {
@@ -142,11 +144,18 @@ export interface GitHubClient extends GitHubReader {
   mergePullRequest(fullName: string, pullNumber: number, sha: string, mergeMethod: "merge" | "squash" | "rebase"): Promise<MergeOutcome>;
 }
 
-const ROLE_RANK: Record<string, number> = { none: 0, read: 1, triage: 2, write: 3, maintain: 4, admin: 5 };
+const ROLE_RANK = new Map<string, number>([
+  ["none", 0],
+  ["read", 1],
+  ["triage", 2],
+  ["write", 3],
+  ["maintain", 4],
+  ["admin", 5],
+]);
 
 /** Ranks a collaborator permission; unknown custom roles fall back to the coarse legacy field. */
 export function permissionRank(p: Pick<CollaboratorPermission, "permission" | "roleName">): number {
-  return ROLE_RANK[p.roleName] ?? ROLE_RANK[p.permission] ?? 0;
+  return ROLE_RANK.get(p.roleName) ?? ROLE_RANK.get(p.permission) ?? 0;
 }
 
 const LoginSchema = z.string().regex(/^[A-Za-z0-9-]{1,39}$/);
@@ -164,7 +173,7 @@ const CheckRunsSchema = z.object({
       name: z.string(),
       status: z.string(),
       conclusion: z.string().nullable(),
-      app: z.object({ slug: z.string() }).nullable().optional(),
+      app: z.object({ id: z.number().int(), slug: z.string() }).nullable().optional(),
     }),
   ),
 });
@@ -298,7 +307,7 @@ export function createGitHubClient(options: GitHubClientOptions): GitHubClient {
       const head = HexShaSchema.parse(sha);
       const r = await getJson(`${repoPath(fullName)}/commits/${head}/check-runs?per_page=100`, CheckRunsSchema);
       if (r.total_count > r.check_runs.length) throw new GitHubApiError(0, "too many check runs to evaluate on one page");
-      return r.check_runs.map((c) => ({ name: c.name, status: c.status, conclusion: c.conclusion, appSlug: c.app?.slug ?? null }));
+      return r.check_runs.map((c) => ({ name: c.name, status: c.status, conclusion: c.conclusion, appSlug: c.app?.slug ?? null, appId: c.app?.id ?? null }));
     },
 
     async getCombinedStatus(fullName, sha) {

@@ -48,6 +48,7 @@ export function registerPaidReviewRoutes(app: Hono<AppEnv>, deps: AppDeps, requi
       network: cfg.network,
       asset: cfg.asset,
       merchantAccountId: cfg.merchantAccountId,
+      payerAccountId: cfg.payerAccountId,
       quotedTinybar: cfg.quotedTinybar,
       maxTinybar: cfg.maxTinybar,
       allowedEvidenceKinds: cfg.acceptedEvidence,
@@ -82,6 +83,7 @@ export function registerPaidReviewRoutes(app: Hono<AppEnv>, deps: AppDeps, requi
             payer: r.payerAccountId,
             merchant: r.merchantAccountId,
             amountTinybar: r.amountBaseUnits,
+            notBefore: new Date(job.created_at),
           });
     if (ledger?.kind === "mismatch") {
       transaction(deps.db, () => {
