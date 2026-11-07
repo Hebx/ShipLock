@@ -1,0 +1,22 @@
+{
+  "name": "shiplock",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.30.1",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "typecheck": "pnpm -r --parallel typecheck",
+    "test": "pnpm -r test",
+    "dev:api": "pnpm --filter @shiplock/api dev",
+    "dev:web": "pnpm --filter @shiplock/web dev",
+    "build:web": "pnpm --filter @shiplock/web build",
+    "analyze": "pnpm --filter @shiplock/api analyze"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.6",
+    "typescript": "7.0.2",
+    "vitest": "5.1.0"
+  }
+}

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="ShipLock icon: locked release vessel">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5424D8"/><stop offset="0.58" stop-color="#2B165B"/><stop offset="1" stop-color="#101532"/></linearGradient>
+    <linearGradient id="hull" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFF"/><stop offset="1" stop-color="#C5AEFC"/></linearGradient>
+  </defs>
+  <rect x="14" y="14" width="484" height="484" rx="104" fill="url(#bg)"/>
+  <rect x="23" y="23" width="466" height="466" rx="96" fill="none" stroke="#9B68FF" stroke-opacity=".65" stroke-width="6"/>
+  <!-- stacked code cargo -->
+  <path d="M220 100 258 82 298 100v40h-78z" fill="#FFF"/>
+  <path d="M159 151 222 123l38 17v57h-101z" fill="#F6F1FF"/>
+  <path d="M265 140 308 123l62 28v46H265z" fill="#E6D8FF"/>
+  <!-- gate and vessel outline -->
+  <path d="M78 233 256 192l178 41-45 131c-58 31-112 45-133 45s-75-14-133-45L78 233Z" fill="#131535" stroke="url(#hull)" stroke-width="16" stroke-linejoin="round"/>
+  <path d="M83 414c52-30 94-32 149-9 45 19 71 18 115-4 36-18 57-20 85-12" stroke="#A065FF" stroke-width="15" fill="none" stroke-linecap="round" opacity=".9"/>
+  <!-- lock -->
+  <path d="M221 278v-23c0-21 16-39 35-39s35 18 35 39v23" stroke="#fff" stroke-width="18" fill="none" stroke-linecap="round"/>
+  <rect x="196" y="271" width="120" height="93" rx="18" fill="#E9D9FF" stroke="#fff" stroke-width="6"/>
+  <circle cx="256" cy="311" r="12" fill="#241C57"/><path d="M250 320h12l8 22h-28z" fill="#241C57"/>
+</svg>
