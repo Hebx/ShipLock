@@ -18,7 +18,7 @@ One shared repository, separate worktrees/branches, clear file ownership and a s
 3. Hermes writes research compatibility decision and publishes a payment module contract. Cursor proceeds with app/safety checks against a clearly marked local fake adapter only for unit and frontend work.
 4. Hermes proves real Hedera x402 on testnet and opens a PR. Cursor merges/rebases that feature (or human approves) and removes any fake adapter from the integrated happy path.
 5. Before final signoff, Hermes adversarially reviews Cursor's OIDC + SHA-guarded merge logic; Cursor reviews payment integration/evidence.
-6. Any integration conflict is resolved by Cursor on `cursor/integration`, not parallel edits to main.
+6. Any integration conflict is resolved by Cursor on `release/v0.1` (renamed from `cursor/integration`), not parallel edits to main.
 
 ## Milestone gate
 M0 winner research → M1 real x402 payment → M2 commit-bound review → M3 official Agent Pass auth + explicit approval → M4 real SHA-guarded demo-repo merge → M5 failure proofs and demo. These are **evidence gates, not durations**.

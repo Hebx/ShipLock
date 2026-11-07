@@ -4,16 +4,20 @@
 |---|---|---|---|---|---|
 | M0 research | Verified | Hermes | `hermes/hedera-x402` | [RESEARCH_NOTES](RESEARCH_NOTES.md) | — |
 | App foundation (DB, schemas, state machine, API, UI) | In progress — foundation tests pass | Cursor | `cursor/product-gate` | [app-foundation.md](evidence/app-foundation.md) §1 | — |
-| M1 paid x402 | Verified (live testnet) and integrated into the app | Hermes (adapter), Cursor (wiring) | `cursor/integration` | [M1 evidence](evidence/payment/M1.md), [Gate C payment](evidence/integration/gate-c-payment.md) | Merchant not publicly hosted |
+| M1 paid x402 | Verified (live testnet) and integrated into the app | Hermes (adapter), Cursor (wiring) | `release/v0.1` | [M1 evidence](evidence/payment/M1.md), [Gate C payment](evidence/integration/gate-c-payment.md) | Merchant not publicly hosted |
 | M2 SHA-bound audit | Verified (live GitHub read on the demo repo) | Cursor | `5e8133c` | [M2](evidence/github/M2.md) | — |
-| M3 World ID (IDKit) + GitHub maintainer | In progress — live production enrollment, one cancelled approval and one approved approval recorded | Cursor | `cursor/integration` (`aa5b8c1`) | [production enrollment](evidence/world/production-enrollment.md), [live approval and merge](evidence/integration/live-approval-and-merge.md) | Hermes Gate D re-review of `ce01ba7`, `3210ad3`, `aa5b8c1` |
-| M4 GitHub merge | In progress — one live SHA-guarded merge of demo PR #1 (`953ab250…` → `5132381c`) recorded | Cursor | `cursor/integration` (`aa5b8c1`) | [live approval and merge](evidence/integration/live-approval-and-merge.md) | Live changed-SHA rejection still to run; Hermes Gate D re-review |
+| M3 World ID (IDKit) + GitHub maintainer | In progress — live production enrollment, one cancelled approval and one approved approval recorded | Cursor | `release/v0.1` (`aa5b8c1`) | [production enrollment](evidence/world/production-enrollment.md), [live approval and merge](evidence/integration/live-approval-and-merge.md) | Hermes Gate D re-review of `ce01ba7`, `3210ad3`, `aa5b8c1` |
+| M4 GitHub merge | In progress — one live SHA-guarded merge of demo PR #1 (`953ab250…` → `5132381c`) recorded | Cursor | `release/v0.1` (`aa5b8c1`) | [live approval and merge](evidence/integration/live-approval-and-merge.md) | Live changed-SHA rejection still to run; Hermes Gate D re-review |
 | M5 evidence/demo | Not started | Joint | — | — | M1–M4 |
 | M6 optional | Not started | Joint | — | — | — |
 
 Update this file whenever a milestone changes state. Use `Not started`, `In progress`, `Blocked`, or `Verified` with evidence URL.
 
 ## Change log
+
+### Cursor — `release/v0.1` — default branch renamed
+
+- `cursor/integration` renamed to `release/v0.1` (still the default branch; tagged `v0.1.0`). Entries below keep the branch name in use at the time. `main` stays untouched until Hermes's Gate D re-review passes.
 
 ### Cursor — `cursor/integration` — live approval and merge evidence
 
