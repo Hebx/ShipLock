@@ -103,7 +103,7 @@ describe("verifyPaidReviewResult", () => {
 
 describe("computeOperationHash", () => {
   const op: MergeOperation = {
-    schema: "shiplock.merge-operation/v1",
+    schema: "shiplock.merge-operation/v2",
     action: "merge_pull_request",
     authorizationId: "auth_1",
     repositoryId: 42,
@@ -113,9 +113,12 @@ describe("computeOperationHash", () => {
     baseRef: "main",
     reportSha256,
     scannerVersion: SCANNER_VERSION,
+    paidReviewEvidenceKind: "live",
     mergeMethod: "squash",
     approverGithubLogin: "Hebx",
-    worldIssuer: "https://auth.world.org",
+    approverGithubUserId: 1001,
+    worldEnvironment: "production",
+    worldRpId: "rp_0123456789abcdef",
     nonce: "n".repeat(32),
     expiresAt: "2026-11-07T12:00:00.000Z",
   };
@@ -130,6 +133,10 @@ describe("computeOperationHash", () => {
       { reportSha256: "f".repeat(64) },
       { mergeMethod: "merge" as const },
       { approverGithubLogin: "someone-else" },
+      { approverGithubUserId: 1002 },
+      { worldEnvironment: "staging" as const },
+      { worldRpId: "rp_other" },
+      { paidReviewEvidenceKind: "simulated" as const },
       { expiresAt: "2026-11-07T12:00:01.000Z" },
       { nonce: "m".repeat(32) },
     ]) {

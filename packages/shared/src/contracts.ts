@@ -4,8 +4,8 @@ export type HexSha = string; // runtime validator enforces exactly 40 lowercase 
 /**
  * Where a piece of evidence came from. The UI must render this label next to every
  * payment, identity and merge artifact.
- * - live: real Hedera testnet settlement / production World IdP / real GitHub API side effect
- * - test: real protocol run against a sandbox or test environment (e.g. World sandbox identity)
+ * - live: real Hedera testnet settlement / production World ID proof / real GitHub API side effect
+ * - test: real protocol run against a test environment (e.g. World staging simulator proof)
  * - simulated: fake adapter or fixture; never proof of anything external
  */
 export type EvidenceKind = "live" | "test" | "simulated";
@@ -98,6 +98,13 @@ export type MergeAuthorizationStatus =
   | "invalidated"
   | "consumed";
 
+/** World ID environment a proof was verified in. `staging` proofs come from the simulator, not a real human. */
+export type WorldEnvironment = "production" | "staging";
+
+/**
+ * Public view of a merge authorization. The World session id and nullifiers stay server-side;
+ * `worldEnrollmentId` is an opaque ShipLock reference, never a World identifier.
+ */
 export interface MergeAuthorization {
   authorizationId: string;
   reviewJobId: string;
@@ -107,8 +114,11 @@ export interface MergeAuthorization {
   headSha: HexSha;
   reportSha256: string;
   operationHash: string;
-  worldIssuer: string;
-  worldSubject: string; // server-only, NOT HCS
+  approverGithubLogin: string;
+  approverGithubUserId: number;
+  worldEnvironment: WorldEnvironment;
+  worldEnrollmentId: string;
   expiresAt: string;
+  approvedAt?: string;
   status: MergeAuthorizationStatus;
 }

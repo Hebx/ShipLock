@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import { createGitHubClient, DiffTooLargeError, GitHubApiError, RepositoryNotAllowedError } from "../src/index.ts";
+import {
+  createGitHubClient,
+  DiffTooLargeError,
+  GitHubApiError,
+  MergeOutcomeUnknownError,
+  permissionRank,
+  RepositoryNotAllowedError,
+} from "../src/index.ts";
 
 const REPO = "Hebx/shiplock-demo-target";
 const HEAD = "a".repeat(40);
@@ -70,6 +77,73 @@ describe("GitHub client", () => {
     expect((await gh.getCompareDiff(REPO, BASE, HEAD)).byteLength).toBe(64);
     const small = createGitHubClient({ allowlist: [REPO], fetch: f, maxDiffBytes: 10 });
     await expect(small.getCompareDiff(REPO, BASE, HEAD)).rejects.toBeInstanceOf(DiffTooLargeError);
+  });
+
+  it("merges with the expected SHA precondition and maps GitHub outcomes", async () => {
+    const MERGE = "c".repeat(40);
+    let status = 200;
+    const f = fakeFetch((url, init) => {
+      expect(url).toBe(`https://api.github.com/repos/Hebx/shiplock-demo-target/pulls/7/merge`);
+      expect(init.method).toBe("PUT");
+      expect(JSON.parse(String(init.body))).toEqual({ sha: HEAD, merge_method: "squash" });
+      return status === 200 ? Response.json({ merged: true, sha: MERGE, message: "ok" }) : new Response("{}", { status });
+    });
+    const gh = createGitHubClient({ allowlist: [REPO], fetch: f });
+    expect(await gh.mergePullRequest(REPO, 7, HEAD, "squash")).toEqual({ kind: "merged", mergeCommitSha: MERGE });
+    status = 409;
+    expect(await gh.mergePullRequest(REPO, 7, HEAD, "squash")).toEqual({ kind: "head_changed", httpStatus: 409 });
+    status = 405;
+    expect(await gh.mergePullRequest(REPO, 7, HEAD, "squash")).toEqual({ kind: "rejected", httpStatus: 405 });
+    status = 502;
+    await expect(gh.mergePullRequest(REPO, 7, HEAD, "squash")).rejects.toBeInstanceOf(MergeOutcomeUnknownError);
+    await expect(gh.mergePullRequest(REPO, 7, "main", "squash")).rejects.toThrow();
+  });
+
+  it("treats a network failure during merge as an unknown outcome, not a failure", async () => {
+    const f = vi.fn(async () => {
+      throw new TypeError("fetch failed");
+    });
+    const gh = createGitHubClient({ allowlist: [REPO], fetch: f });
+    await expect(gh.mergePullRequest(REPO, 7, HEAD, "merge")).rejects.toBeInstanceOf(MergeOutcomeUnknownError);
+  });
+
+  it("reads collaborator permission and treats 404 as no access", async () => {
+    let status = 200;
+    const f = fakeFetch((url) => {
+      expect(url).toBe(`https://api.github.com/repos/Hebx/shiplock-demo-target/collaborators/maint/permission`);
+      return status === 200 ? Response.json({ permission: "write", role_name: "maintain", user: { id: 5, login: "maint" } }) : new Response("", { status });
+    });
+    const gh = createGitHubClient({ allowlist: [REPO], fetch: f });
+    const p = await gh.getCollaboratorPermission(REPO, "maint");
+    expect(p).toEqual({ userId: 5, permission: "write", roleName: "maintain" });
+    expect(permissionRank(p)).toBeGreaterThan(permissionRank({ permission: "read", roleName: "triage" }));
+    status = 404;
+    expect(permissionRank(await gh.getCollaboratorPermission(REPO, "maint"))).toBe(0);
+    await expect(gh.getCollaboratorPermission(REPO, "../admin")).rejects.toThrow();
+  });
+
+  it("reads check runs, combined status and branch rules for an exact SHA", async () => {
+    const f = fakeFetch((url) => {
+      if (url.endsWith(`/commits/${HEAD}/check-runs?per_page=100`)) {
+        return Response.json({ total_count: 1, check_runs: [{ name: "ci", status: "completed", conclusion: "success", app: { slug: "github-actions" } }] });
+      }
+      if (url.endsWith(`/commits/${HEAD}/status?per_page=100`)) return Response.json({ state: "pending", total_count: 0, statuses: [] });
+      if (url.endsWith(`/rules/branches/main?per_page=100`)) {
+        return Response.json([{ type: "required_status_checks", parameters: { required_status_checks: [{ context: "ci" }] } }]);
+      }
+      return new Response("", { status: 404 });
+    });
+    const gh = createGitHubClient({ allowlist: [REPO], fetch: f });
+    expect(await gh.listCheckRuns(REPO, HEAD)).toEqual([{ name: "ci", status: "completed", conclusion: "success", appSlug: "github-actions" }]);
+    expect(await gh.getCombinedStatus(REPO, HEAD)).toEqual({ state: "pending", totalCount: 0, statuses: [] });
+    expect((await gh.getBranchRules(REPO, "main"))[0]!.type).toBe("required_status_checks");
+    await expect(gh.getBranchRules(REPO, "../x")).rejects.toThrow();
+  });
+
+  it("fails closed when GitHub reports more check runs than one page", async () => {
+    const f = fakeFetch(() => Response.json({ total_count: 150, check_runs: [] }));
+    const gh = createGitHubClient({ allowlist: [REPO], fetch: f });
+    await expect(gh.listCheckRuns(REPO, HEAD)).rejects.toBeInstanceOf(GitHubApiError);
   });
 
   it("surfaces HTTP errors without echoing response bodies", async () => {

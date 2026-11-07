@@ -28,7 +28,9 @@ const TRANSITIONS: Record<ReleaseState, readonly ReleaseState[]> = {
   paid_review_confirmed: ["approval_pending", "stale", "invalid"],
   approval_pending: ["approved", "denied", "expired", "stale", "invalid"],
   approved: ["merge_in_progress", "expired", "stale", "invalid"],
-  merge_in_progress: ["merged", "stale", "failed", "reconcile_required"],
+  // Back to paid_review_confirmed = a pre-merge check blocked; the consumed approval is gone and
+  // a fresh human approval is required.
+  merge_in_progress: ["merged", "stale", "failed", "reconcile_required", "paid_review_confirmed"],
   // A merge with an unknown outcome is resolved only by reading GitHub, never by retrying.
   reconcile_required: ["merged", "stale", "failed"],
   // Denied or expired authorizations may be replaced by a fresh authorization for the same SHA.
