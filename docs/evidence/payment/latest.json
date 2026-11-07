@@ -1,7 +1,7 @@
 {
   "kind": "LIVE hedera:testnet x402 v2 exact HBAR",
-  "startedAt": "2026-11-07T01:25:58.994Z",
-  "finishedAt": "2026-11-07T01:26:07.400Z",
+  "startedAt": "2026-11-07T01:29:53.915Z",
+  "finishedAt": "2026-11-07T01:30:08.508Z",
   "facilitator": {
     "url": "https://api.testnet.blocky402.com",
     "supportedHederaKind": {
@@ -30,29 +30,33 @@
       "payTo": "0.0.9050506",
       "maxTimeoutSeconds": 120,
       "extra": {
-        "quoteId": "1ddc73e4-7c7d-4600-96f6-a5cfbcabaa2c",
-        "repositoryId": 1448904918,
-        "repository": "Hebx/shiplock-demo-target",
-        "pullNumber": 1,
-        "baseSha": "10143ffa2cb17fc32ce44c69b3913f8caba462ae",
-        "headSha": "d0cbdfd3cc1dddb80cbc657b0dbe52abb7d1b0cf",
-        "scannerVersion": "shiplock-deterministic/0.1.0",
+        "quoteId": "efcc8e10-edad-4a74-be1d-11905b1abf05",
+        "shiplock": {
+          "jobId": "live-1794014994774",
+          "repositoryId": 1448904918,
+          "repository": "Hebx/shiplock-demo-target",
+          "pullNumber": 1,
+          "headSha": "d0cbdfd3cc1dddb80cbc657b0dbe52abb7d1b0cf",
+          "baseSha": "10143ffa2cb17fc32ce44c69b3913f8caba462ae",
+          "scannerVersion": "shiplock-deterministic/0.1.0",
+          "diffSha256": "e6ec27c0e888101fd3e8c9355975c2d8ce2ef935e9f6f4224f65b6c2eda0023c"
+        },
         "feePayer": "0.0.7162784"
       }
     }
   ],
   "resource": {
-    "url": "http://127.0.0.1:4402/audit?jobId=live-1794014759860&repoId=1448904918&repo=Hebx%2Fshiplock-demo-target&pr=1&base=10143ffa2cb17fc32ce44c69b3913f8caba462ae&head=d0cbdfd3cc1dddb80cbc657b0dbe52abb7d1b0cf&scanner=shiplock-deterministic%2F0.1.0",
+    "url": "http://127.0.0.1:4402/audit?jobId=live-1794014994774&repoId=1448904918&repo=Hebx%2Fshiplock-demo-target&pr=1&base=10143ffa2cb17fc32ce44c69b3913f8caba462ae&sha=d0cbdfd3cc1dddb80cbc657b0dbe52abb7d1b0cf&diff=e6ec27c0e888101fd3e8c9355975c2d8ce2ef935e9f6f4224f65b6c2eda0023c&scanner=shiplock-deterministic%2F0.1.0",
     "description": "ShipLock code review of Hebx/shiplock-demo-target#1 10143ffa2cb17fc32ce44c69b3913f8caba462ae...d0cbdfd3cc1dddb80cbc657b0dbe52abb7d1b0cf",
     "mimeType": "application/json",
     "serviceName": "shiplock-audit"
   },
   "settlement": {
-    "transactionId": "0.0.7162784@1794014756.028048683",
-    "hashscan": "https://hashscan.io/testnet/transaction/1794014761.836901104",
-    "hashscanById": "https://hashscan.io/testnet/transactionsById/0.0.7162784-1794014756-028048683",
-    "mirrorUrl": "https://testnet.mirrornode.hedera.com/api/v1/transactions/0.0.7162784-1794014756-028048683",
-    "consensusTimestamp": "1794014761.836901104",
+    "transactionId": "0.0.7162784@1794014990.278100917",
+    "hashscan": "https://hashscan.io/testnet/transaction/1794014997.575043104",
+    "hashscanById": "https://hashscan.io/testnet/transactionsById/0.0.7162784-1794014990-278100917",
+    "mirrorUrl": "https://testnet.mirrornode.hedera.com/api/v1/transactions/0.0.7162784-1794014990-278100917",
+    "consensusTimestamp": "1794014997.575043104",
     "mirrorResult": "SUCCESS",
     "mirrorTransfers": [
       {
@@ -77,22 +81,22 @@
       }
     ],
     "chargedTxFee": 295895,
-    "elapsedMsAgentStartToConfirmed": 5986
+    "elapsedMsAgentStartToConfirmed": 5206
   },
   "balances": {
     "before": {
-      "0.0.7304745": 68700683415,
-      "0.0.9050506": 5335204730,
-      "0.0.7162784": 29014819650736
-    },
-    "after": {
       "0.0.7304745": 68700682415,
       "0.0.9050506": 5335205730,
-      "0.0.7162784": 29014819354841
+      "0.0.7162784": 29014802784693
+    },
+    "after": {
+      "0.0.7304745": 68700681415,
+      "0.0.9050506": 5335206730,
+      "0.0.7162784": 29014802488798
     }
   },
   "job": {
-    "jobId": "live-1794014759860",
+    "jobId": "live-1794014994774",
     "repositoryId": 1448904918,
     "repository": "Hebx/shiplock-demo-target",
     "pullNumber": 1,
@@ -104,16 +108,17 @@
     "verifyPaidReviewResult": true,
     "checkHederaTransfer": {
       "kind": "confirmed",
-      "consensusTimestamp": "1794014761.836901104"
+      "consensusTimestamp": "1794014997.575043104"
     }
   },
   "paidAudit": {
     "repository": "Hebx/shiplock-demo-target",
     "pullRequest": "https://github.com/Hebx/shiplock-demo-target/pull/1",
     "localReportSha256": "ca41051e5fe5f497401ac44299662d3ba94d8546e85fa5c2555488194b3a56fc",
+    "expectedDiffSha256": "e6ec27c0e888101fd3e8c9355975c2d8ce2ef935e9f6f4224f65b6c2eda0023c",
     "headSha": "d0cbdfd3cc1dddb80cbc657b0dbe52abb7d1b0cf",
     "reportSha256": "ca41051e5fe5f497401ac44299662d3ba94d8546e85fa5c2555488194b3a56fc",
-    "responseBodySha256": "d88bc11f0a5d438aa96fb40c2736f31db9698871797e7eb48086b592ba9f1b22",
+    "responseBodySha256": "4960cbd99c50354d93ea38d900d048ca930a6d3019f3dc69599fc5b069e6aef3",
     "findings": 0,
     "conclusion": "pass",
     "diffSha256": "e6ec27c0e888101fd3e8c9355975c2d8ce2ef935e9f6f4224f65b6c2eda0023c",
@@ -127,7 +132,7 @@
     "scannerVersion": "shiplock-deterministic/0.1.0"
   },
   "paidReviewResult": {
-    "jobId": "live-1794014759860",
+    "jobId": "live-1794014994774",
     "repositoryId": 1448904918,
     "pullNumber": 1,
     "headSha": "d0cbdfd3cc1dddb80cbc657b0dbe52abb7d1b0cf",
@@ -160,7 +165,7 @@
     "amountBaseUnits": "1000",
     "payerAccountId": "0.0.7304745",
     "merchantAccountId": "0.0.9050506",
-    "hederaTransactionId": "0.0.7162784@1794014756.028048683",
+    "hederaTransactionId": "0.0.7162784@1794014990.278100917",
     "settlementConfirmed": true,
     "evidenceKind": "live",
     "vendorId": "shiplock-x402-audit",
@@ -172,7 +177,9 @@
     "wrong_recipient": "PaymentPolicyError: Failed to create payment payload: All payment requirements were filtered out by policies for x402 version: 2",
     "sha_mismatch_presign": "PaymentPolicyError: Failed to create payment payload: All payment requirements were filtered out by policies for x402 version: 2",
     "modified_quote": "402 quote_modified",
-    "invalid_signature": "402 invalid_exact_hedera_payload_signature_invalid"
+    "invalid_signature": "402 invalid_exact_hedera_payload_signature_invalid",
+    "wrong_diff_no_quote": "409 {\"error\":\"job_does_not_match_github\",\"detail\":\"diff_sha256_mismatch\"}",
+    "diff_mismatch_presign": "PaymentPolicyError: Failed to create payment payload: All payment requirements were filtered out by policies for x402 version: 2"
   },
   "sdkVersions": {
     "node": "v22.23.3",

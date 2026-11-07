@@ -1,7 +1,8 @@
 /**
  * Paid /audit merchant. Standard x402 v2 over HTTP:
  *
- *   GET /audit?jobId&repoId&repo&pr&base&head&scanner  -> 402 + PAYMENT-REQUIRED (fresh immutable quote)
+ *   GET /audit?jobId&repoId&repo&pr&base&sha&diff&scanner -> 402 + PAYMENT-REQUIRED (fresh immutable quote)
+ *   (contract v2: docs/INTEGRATION_CONTRACT.md; quote carries extra.shiplock = ReviewQuoteBinding)
  *   GET /audit?... + PAYMENT-SIGNATURE         -> verify -> settle -> mirror confirm -> 200 + PAYMENT-RESPONSE
  *
  * Invariants (docs/SECURITY.md):
@@ -16,7 +17,8 @@ import { decodePaymentSignatureHeader, encodePaymentRequiredHeader, encodePaymen
 import type { PaymentPayload, PaymentRequirements, SettleResponse } from "@x402/core/types";
 import { ExactHederaScheme } from "@x402/hedera/exact/server";
 import { extractTransactionFromPayload, inspectHederaTransaction, HBAR_ASSET_ID } from "@x402/hedera";
-import { ReviewJobSchema, type ReviewJob } from "@shiplock/shared";
+import { ReviewQuoteBindingSchema, sha256Hex as sha256Bytes, type ReviewJob, type ReviewQuoteBinding } from "@shiplock/shared";
+import type { GitHubReader } from "@shiplock/github";
 import { canonicalEqual, canonicalJson, sha256Hex, ENTITY_RE } from "../canonical.ts";
 import { resolveHederaCapability, type HederaCapability, type HederaNetwork } from "../capabilities.ts";
 import { assertHbarTransfer, validStartSeconds, waitForMirror, type MirrorClient } from "../mirror.ts";
@@ -39,6 +41,11 @@ export interface MerchantConfig {
   mirrorTimeoutMs?: number;
   repoAllowlist?: string[];
   vendorId?: string;
+  /**
+   * When set, the merchant verifies the job against GitHub BEFORE quoting: PR head/base and repo id
+   * must match, and sha256(compare diff) must equal `diff`. Mismatches are refused before the 402.
+   */
+  github?: Pick<GitHubReader, "getPullRequest" | "getCompareDiff">;
   now?: () => number;
   log?: (event: string, data: Record<string, unknown>) => void;
 }
@@ -217,7 +224,8 @@ export async function createAuditMerchant(cfg: MerchantConfig): Promise<Merchant
       report.pullNumber !== job.pullNumber ||
       report.headSha !== job.headSha ||
       report.baseSha !== job.baseSha ||
-      report.scannerVersion !== job.scannerVersion
+      report.scannerVersion !== job.scannerVersion ||
+      report.diffSha256 !== quote.diffSha256
     ) {
       log("audit_binding_mismatch", { quoteId: quote.quoteId, txId });
       return c.json({ error: "audit_binding_mismatch_paid", transactionId: txId }, 503);
@@ -259,6 +267,13 @@ export async function createAuditMerchant(cfg: MerchantConfig): Promise<Merchant
   }
 
   async function issueQuote(c: Context, params: Params, error?: string) {
+    if (cfg.github) {
+      const problem = await verifyAgainstGithub(cfg.github, params);
+      if (problem) {
+        log("quote_refused", { jobId: params.jobId, problem });
+        return c.json({ error: "job_does_not_match_github", detail: problem }, 409);
+      }
+    }
     const quoteId = randomUUID();
     const createdAt = now();
     const [requirements] = await resourceServer.buildPaymentRequirements({
@@ -267,7 +282,7 @@ export async function createAuditMerchant(cfg: MerchantConfig): Promise<Merchant
       payTo: cfg.payTo,
       price: { asset: HBAR_ASSET_ID, amount: cfg.priceTinybar.toString() },
       maxTimeoutSeconds: ttl,
-      extra: { quoteId, repositoryId: params.repositoryId, repository: params.repository, pullNumber: params.pullNumber, baseSha: params.baseSha, headSha: params.headSha, scannerVersion: params.scannerVersion },
+      extra: { quoteId, shiplock: bindingOf(params) },
     });
     if (!requirements) throw new Error("no payment requirements built");
     if (requirements.extra.feePayer !== capability.feePayer) throw new Error("fee payer drifted from /supported capability");
@@ -281,6 +296,7 @@ export async function createAuditMerchant(cfg: MerchantConfig): Promise<Merchant
       headSha: params.headSha,
       baseSha: params.baseSha,
       scannerVersion: params.scannerVersion,
+      diffSha256: params.diffSha256,
       requirementsJson: JSON.stringify(requirements),
       resourceUrl,
       createdAt,
@@ -300,36 +316,67 @@ export async function createAuditMerchant(cfg: MerchantConfig): Promise<Merchant
   return { app, store, capability };
 }
 
-type Params = ReviewJob;
+type Params = ReviewQuoteBinding;
 
-/** Query -> ReviewJob, validated with the shared schema (40-hex lowercase SHAs, positive ints). */
+/** Query -> ReviewQuoteBinding, validated with the shared strict schema. */
 export function parseParams(c: Context): Params | { error: string } {
   const q = (k: string) => c.req.query(k);
   const int = (v: string | undefined) => (v !== undefined && /^[1-9][0-9]{0,15}$/.test(v) ? Number(v) : NaN);
-  const parsed = ReviewJobSchema.safeParse({
+  const parsed = ReviewQuoteBindingSchema.safeParse({
     jobId: q("jobId"),
     repositoryId: int(q("repoId")),
     repository: q("repo"),
     pullNumber: int(q("pr")),
     baseSha: q("base"),
-    headSha: q("head"),
+    headSha: q("sha"),
     scannerVersion: q("scanner"),
+    diffSha256: q("diff"),
   });
   if (!parsed.success) return { error: `invalid_job:${parsed.error.issues.map((i) => i.path.join(".")).join(",")}` };
   return parsed.data;
 }
 
-/** Build the canonical review URL for a job (used by the buyer and by Cursor's API). */
-export function auditUrl(baseUrl: string, job: ReviewJob): string {
+/** Canonical review URL for a job + ShipLock's diff digest (used by the buyer and by Cursor's API). */
+export function auditUrl(baseUrl: string, job: ReviewJob, diffSha256: string): string {
   const u = new URL(`${baseUrl.replace(/\/+$/, "")}/audit`);
   u.searchParams.set("jobId", job.jobId);
   u.searchParams.set("repoId", String(job.repositoryId));
   u.searchParams.set("repo", job.repository);
   u.searchParams.set("pr", String(job.pullNumber));
   u.searchParams.set("base", job.baseSha);
-  u.searchParams.set("head", job.headSha);
+  u.searchParams.set("sha", job.headSha);
+  u.searchParams.set("diff", diffSha256);
   u.searchParams.set("scanner", job.scannerVersion);
   return u.toString();
+}
+
+function bindingOf(p: ReviewQuoteBinding): ReviewQuoteBinding {
+  return {
+    jobId: p.jobId,
+    repositoryId: p.repositoryId,
+    repository: p.repository,
+    pullNumber: p.pullNumber,
+    headSha: p.headSha,
+    baseSha: p.baseSha,
+    scannerVersion: p.scannerVersion,
+    diffSha256: p.diffSha256,
+  };
+}
+
+async function verifyAgainstGithub(gh: NonNullable<MerchantConfig["github"]>, p: ReviewQuoteBinding): Promise<string | null> {
+  let pr;
+  try {
+    pr = await gh.getPullRequest(p.repository, p.pullNumber);
+  } catch (err) {
+    return `github_pr_unavailable:${errMsg(err)}`;
+  }
+  if (pr.headSha !== p.headSha) return "head_sha_not_current";
+  if (pr.baseSha !== p.baseSha) return "base_sha_mismatch";
+  if (pr.repositoryId !== p.repositoryId) return "repository_id_mismatch";
+  if (pr.state !== "open") return "pull_request_not_open";
+  const diff = await gh.getCompareDiff(p.repository, p.baseSha, p.headSha);
+  if (sha256Bytes(diff) !== p.diffSha256) return "diff_sha256_mismatch";
+  return null;
 }
 
 function jobOf(q: QuoteRow): ReviewJob {
@@ -344,7 +391,8 @@ function sameJob(q: QuoteRow, p: Params): boolean {
     q.pullNumber === p.pullNumber &&
     q.headSha === p.headSha &&
     q.baseSha === p.baseSha &&
-    q.scannerVersion === p.scannerVersion
+    q.scannerVersion === p.scannerVersion &&
+    q.diffSha256 === p.diffSha256
   );
 }
 

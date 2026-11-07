@@ -4,7 +4,7 @@
  * Uses the official @x402/fetch + @x402/hedera exact client for 402 negotiation and signing.
  * ShipLock policy runs in a PaymentPolicy *before* anything is signed:
  *   scheme exact, network, asset HBAR, payTo allowlist, feePayer == facilitator /supported,
- *   integer amount <= cap, and the quote bound to the exact ReviewJob (repo id, PR, base, head, scanner).
+ *   integer amount <= cap, and quote `extra.shiplock` canonically equal to { ...job, diffSha256 } (contract v2).
  * After the paid response: Mirror Node confirmation of the exact transfer, digest recomputation,
  * report binding to the job, then PaidReviewResultSchema validation.
  */
@@ -13,11 +13,13 @@ import type { PaymentRequirements } from "@x402/fetch";
 import { ExactHederaScheme } from "@x402/hedera/exact/client";
 import { createClientHederaSigner, HBAR_ASSET_ID, inspectHederaTransaction, PrivateKey } from "@x402/hedera";
 import {
+  canonicalJson,
   PaidReviewResultSchema,
-  ReviewJobSchema,
+  PurchaseReviewInputSchema,
+  ReviewQuoteBindingSchema,
   type PaidReviewResult,
   type PurchaseReviewInput,
-  type ReviewJob,
+  type ReviewQuoteBinding,
   type ReviewPurchaseGateway,
 } from "@shiplock/shared";
 import { ENTITY_RE, UINT_RE } from "../canonical.ts";
@@ -78,13 +80,13 @@ export function createReviewPurchaser(cfg: BuyerConfig): ReviewPurchaser {
   return {
     adapterId: ADAPTER_ID,
     async purchaseReview(input: PurchaseReviewInput): Promise<PurchaseResult> {
-      const jobParse = ReviewJobSchema.safeParse(input.job);
-      if (!jobParse.success) throw new PaymentPolicyError("invalid ReviewJob");
-      const job = jobParse.data;
-      if (!UINT_RE.test(input.maxTinybar)) throw new PaymentPolicyError("maxTinybar must be an integer string");
+      const inputParse = PurchaseReviewInputSchema.safeParse(input);
+      if (!inputParse.success) throw new PaymentPolicyError(`invalid PurchaseReviewInput: ${inputParse.error.issues.map((i) => i.path.join(".")).join(",")}`);
+      const job = inputParse.data.job;
+      const binding: ReviewQuoteBinding = ReviewQuoteBindingSchema.parse({ ...job, diffSha256: inputParse.data.expectedDiffSha256 });
       const cap = minBig(BigInt(input.maxTinybar), cfg.globalMaxTinybar);
       if (cap <= 0n) throw new PaymentPolicyError("spend cap is zero");
-      const policy: PolicyContext = { network: cfg.network, allowedPayTo: cfg.allowedPayTo, feePayer: cfg.expectedFeePayer, cap, job };
+      const policy: PolicyContext = { network: cfg.network, allowedPayTo: cfg.allowedPayTo, feePayer: cfg.expectedFeePayer, cap, binding };
 
       let accepted: PaymentRequirements | undefined;
       let signedTxId: string | undefined;
@@ -151,7 +153,8 @@ export function createReviewPurchaser(cfg: BuyerConfig): ReviewPurchaser {
       const digest = reportDigest(body.report);
       if (digest !== body.reportSha256) throw new AuditIntegrityError(`report digest mismatch: computed ${digest}`, signedTxId);
       if (body.report.headSha !== job.headSha) throw new AuditShaMismatchError(job.headSha, body.report.headSha, signedTxId);
-      const bindErr = reportBindingError(body, job);
+      if (body.report.diffSha256 !== binding.diffSha256) throw new AuditIntegrityError("report reviewed a different diff", signedTxId);
+      const bindErr = reportBindingError(body, binding);
       if (bindErr) throw new AuditIntegrityError(bindErr, signedTxId);
       if (body.payment?.transactionId !== signedTxId) throw new AuditIntegrityError("report bound to a different payment", signedTxId);
 
@@ -194,7 +197,7 @@ export interface PolicyContext {
   allowedPayTo: string[];
   feePayer: string;
   cap: bigint;
-  job: ReviewJob;
+  binding: ReviewQuoteBinding;
 }
 
 /** Pure, unit-tested: why a requirement must not be signed (null = acceptable). */
@@ -209,18 +212,18 @@ export function rejectReason(r: PaymentRequirements, p: PolicyContext): string |
   if (amt <= 0n) return "zero amount";
   if (amt > p.cap) return `amount ${amt} exceeds cap ${p.cap}`;
   if (typeof r.maxTimeoutSeconds !== "number" || r.maxTimeoutSeconds <= 0 || r.maxTimeoutSeconds > 600) return "bad maxTimeoutSeconds";
-  const e = r.extra ?? {};
-  const j = p.job;
-  if (e.headSha !== j.headSha) return `quote bound to head ${String(e.headSha)} not ${j.headSha}`;
-  if (e.baseSha !== j.baseSha) return `quote bound to base ${String(e.baseSha)} not ${j.baseSha}`;
-  if (e.repositoryId !== j.repositoryId) return `quote bound to repository id ${String(e.repositoryId)} not ${j.repositoryId}`;
-  if (String(e.repository ?? "").toLowerCase() !== j.repository.toLowerCase()) return `quote bound to ${String(e.repository)} not ${j.repository}`;
-  if (e.pullNumber !== j.pullNumber) return `quote bound to PR ${String(e.pullNumber)} not ${j.pullNumber}`;
-  if (e.scannerVersion !== j.scannerVersion) return `quote bound to scanner ${String(e.scannerVersion)} not ${j.scannerVersion}`;
+  // Contract v2: extra.shiplock must be exactly the binding (strict schema, canonical equality).
+  const quoted = ReviewQuoteBindingSchema.safeParse(r.extra?.shiplock);
+  if (!quoted.success) return "quote has no valid extra.shiplock binding";
+  if (canonicalJson(quoted.data) !== canonicalJson(p.binding)) {
+    const diff = (Object.keys(p.binding) as (keyof ReviewQuoteBinding)[]).filter((k) => quoted.data[k] !== p.binding[k]);
+    return `quote bound to a different revision (${diff.join(",")})`;
+  }
+  if (canonicalJson(r.extra.shiplock) !== canonicalJson(quoted.data)) return "extra.shiplock has unexpected fields";
   return null;
 }
 
-function reportBindingError(body: PaidAuditBody, job: ReviewJob): string | null {
+function reportBindingError(body: PaidAuditBody, job: ReviewQuoteBinding): string | null {
   const r = body.report;
   if (body.jobId !== job.jobId) return `paid body jobId ${body.jobId} != ${job.jobId}`;
   if (r.repositoryId !== job.repositoryId) return "report repository id mismatch";

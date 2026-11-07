@@ -1,9 +1,9 @@
 # Payment ↔ review contract (Hermes → Cursor)
 
-Status: Hermes adapter emits Cursor's `PaidReviewResult` (packages/shared, commit `1a62c12`) **unchanged**.
+Status: Hermes adapter implements Cursor's **contract v2** (`docs/INTEGRATION_CONTRACT.md`, `a8350ab`) unchanged: `PurchaseReviewInput` with `expectedDiffSha256`, quote `extra.shiplock` = `ReviewQuoteBinding` (strict, canonical equality), `PaidReviewResult` validated with `PaidReviewResultSchema`.
 Compatibility is proven two ways:
 - Unit: `packages/x402/test/cursor-acceptance.test.ts` runs Cursor's unmodified `verifyPaidReviewResult` + `checkHederaTransfer` on the buyer's output.
-- Live: `docs/evidence/payment/M1.md`, run 2 (demo PR `Hebx/shiplock-demo-target#1`): `verifyPaidReviewResult` ok with ShipLock's independent digest; `checkHederaTransfer` → `confirmed`.
+- Live: `docs/evidence/payment/M1.md` run 3 (demo PR `Hebx/shiplock-demo-target#1`, tx `0.0.7162784@1794014990.278100917`): `verifyPaidReviewResult` ok with ShipLock's independent report digest **and** diff digest; `checkHederaTransfer` → `confirmed`.
 
 No change to `packages/shared/src/contracts.ts` is requested.
 
@@ -15,7 +15,7 @@ No change to `packages/shared/src/contracts.ts` is requested.
 | `repositoryId` | `ReviewJob.repositoryId` | GitHub numeric repo id |
 | `pullRequestNumber` | `ReviewJob.pullNumber` | |
 | `expectedHeadSha` | `ReviewJob.headSha` | 40 lowercase hex; also `baseSha` is bound |
-| `diffDigest` | `ReviewReport.diffSha256` | sha256 of GitHub `compare/{base}...{head}` diff bytes; inside the signed-over report digest |
+| `diffDigest` | `PurchaseReviewInput.expectedDiffSha256` → quote `extra.shiplock.diffSha256` → `ReviewReport.diffSha256` | sha256 of GitHub `compare/{base}...{head}` diff bytes. Merchant re-fetches and refuses to quote on mismatch (409, before any 402) |
 | `reviewProvider` | `ReviewPurchaseGateway.adapterId` + `PaidReviewResult.vendorId` | adapter `hermes-x402-hedera/2.30.0`, vendor `shiplock-x402-audit` |
 | `maxPaymentAmount` | `PurchaseReviewInput.maxTinybar` | integer tinybar string; min'd with `AGENT_MAX_PAYMENT_TINYBAR` |
 | `auditedHeadSha` | `PaidReviewResult.headSha` = `report.headSha` | |
@@ -49,12 +49,16 @@ const gateway = createReviewPurchaser({
 });
 
 const job = toReviewJob(row);                     // apps/api/src/review-service.ts
-const r = await gateway.purchaseReview({ job, reviewUrl: auditUrl(env.SHIPLOCK_AUDIT_URL, job), maxTinybar: env.AGENT_MAX_PAYMENT_TINYBAR });
+const r = await gateway.purchaseReview({
+  job, expectedDiffSha256: row.diff_sha256,
+  reviewUrl: auditUrl(env.SHIPLOCK_AUDIT_URL, job, row.diff_sha256),
+  maxTinybar: env.AGENT_MAX_PAYMENT_TINYBAR,
+});
 const { evidence, ...result } = r;                // `result` is a plain PaidReviewResult
 await fetch(`${api}/api/reviews/${job.jobId}/paid-review`, { method: "POST", headers: { authorization: `Bearer ${agentToken}` }, body: JSON.stringify({ adapterId: gateway.adapterId, result }) });
 ```
 
-The merchant (`createAuditMerchant` + `createScannerAuditor`) runs `@shiplock/scanner` `scanDiff` over the GitHub compare diff for the quoted base/head, so `reportSha256` equals Cursor's `local_report_sha256` byte for byte (live-verified).
+Merchant URL params (contract v2): `jobId, repoId, repo, pr, base, sha, diff, scanner`. With `github` configured the merchant verifies repo id, PR open, head/base and the diff digest against GitHub before quoting. The merchant (`createAuditMerchant` + `createScannerAuditor`) runs `@shiplock/scanner` `scanDiff` over the GitHub compare diff for the quoted base/head, so `reportSha256` equals Cursor's `local_report_sha256` byte for byte (live-verified).
 
 ## Errors → Cursor action
 

@@ -17,7 +17,7 @@ import {
   PaymentUncertainError,
   type Auditor,
 } from "../src/index.ts";
-import { createStrictFacilitator, FEE_PAYER, JOB, BASE_SHA, Ledger, NETWORK, noopAuditor, PAY_TO, PAYER, payerKey, SHA, type SettleMode } from "./harness.ts";
+import { createStrictFacilitator, DIFF_SHA, fakeGithub, FEE_PAYER, JOB, BASE_SHA, Ledger, NETWORK, noopAuditor, PAY_TO, PAYER, payerKey, SHA, type SettleMode } from "./harness.ts";
 import type { ReviewJob } from "@shiplock/shared";
 
 const BASE = "http://merchant.test";
@@ -51,7 +51,7 @@ async function setup(opts: { auditor?: Auditor; settleMode?: () => SettleMode; p
       ...over,
     });
   const jobFor = (jobId = "job-1", headSha = SHA): ReviewJob => ({ ...JOB, jobId, headSha });
-  const url = (jobId = "job-1", sha = SHA) => auditUrl(BASE, jobFor(jobId, sha));
+  const url = (jobId = "job-1", sha = SHA, diff = DIFF_SHA) => auditUrl(BASE, jobFor(jobId, sha), diff);
   return { ledger, facilitator, merchant, fetchImpl, buyer, url, jobFor };
 }
 
@@ -76,15 +76,16 @@ describe("402 challenge", () => {
     expect(pr.x402Version).toBe(2);
     expect(pr.accepts).toHaveLength(1);
     expect(req).toMatchObject({ scheme: "exact", network: NETWORK, asset: "0.0.0", amount: "1000", payTo: PAY_TO });
-    expect(req.extra).toMatchObject({ feePayer: FEE_PAYER, headSha: SHA, baseSha: BASE_SHA, repository: JOB.repository, repositoryId: JOB.repositoryId, pullNumber: JOB.pullNumber, scannerVersion: JOB.scannerVersion });
+    expect(req.extra.feePayer).toBe(FEE_PAYER);
+    expect(req.extra.shiplock).toEqual({ ...JOB, diffSha256: DIFF_SHA });
     expect(typeof req.extra.quoteId).toBe("string");
     expect(await res.json()).toEqual(pr);
   });
 
   it("rejects malformed resource params before quoting", async () => {
     const { fetchImpl } = await setup();
-    const good = new URL(auditUrl(BASE, JOB));
-    for (const [k, v] of [["head", "main"], ["base", "A".repeat(40)], ["repo", "bad"], ["repoId", "0"], ["pr", "x"], ["scanner", ""]] as const) {
+    const good = new URL(auditUrl(BASE, JOB, DIFF_SHA));
+    for (const [k, v] of [["sha", "main"], ["base", "A".repeat(40)], ["repo", "bad"], ["repoId", "0"], ["pr", "x"], ["scanner", ""], ["diff", "abc"]] as const) {
       const u = new URL(good);
       u.searchParams.set(k, v);
       expect((await fetchImpl(u.toString())).status, k).toBe(400);
@@ -95,7 +96,7 @@ describe("402 challenge", () => {
 describe("happy path (strict official facilitator scheme)", () => {
   it("pays, settles once, confirms via mirror, returns a SHA-bound audit with matching digest", async () => {
     const { buyer, url, ledger, facilitator, merchant } = await setup();
-    const r = await buyer().purchaseReview({ job: { ...JOB, jobId: "job-1", headSha: SHA }, reviewUrl: url(), maxTinybar: "5000" });
+    const r = await buyer().purchaseReview({ job: { ...JOB, jobId: "job-1", headSha: SHA }, expectedDiffSha256: DIFF_SHA, reviewUrl: url(), maxTinybar: "5000" });
     expect(r.settlementConfirmed).toBe(true);
     expect(r.headSha).toBe(SHA);
     expect(r.amountBaseUnits).toBe("1000");
@@ -111,9 +112,11 @@ describe("happy path (strict official facilitator scheme)", () => {
 });
 
 describe("buyer policy (nothing is signed)", () => {
-  const ex = { feePayer: FEE_PAYER, headSha: SHA, baseSha: BASE_SHA, repositoryId: JOB.repositoryId, repository: JOB.repository, pullNumber: JOB.pullNumber, scannerVersion: JOB.scannerVersion };
+  const binding = { ...JOB, diffSha256: DIFF_SHA };
+  const ex = { feePayer: FEE_PAYER, quoteId: "q", shiplock: binding };
+  const sl = (patch: Record<string, unknown>) => ({ extra: { ...ex, shiplock: { ...binding, ...patch } } });
   const base = { scheme: "exact", network: NETWORK, asset: "0.0.0", amount: "1000", payTo: PAY_TO, maxTimeoutSeconds: 120, extra: ex } as PaymentRequirements;
-  const ctx = { network: NETWORK, allowedPayTo: [PAY_TO], feePayer: FEE_PAYER, cap: 5000n, job: JOB };
+  const ctx = { network: NETWORK, allowedPayTo: [PAY_TO], feePayer: FEE_PAYER, cap: 5000n, binding };
   it.each([
     ["wrong network", { network: "hedera:mainnet" }, /network/],
     ["wrong asset (USDC)", { asset: "0.0.429274" }, /asset/],
@@ -123,11 +126,15 @@ describe("buyer policy (nothing is signed)", () => {
     ["negative amount", { amount: "-1" }, /non-integer/],
     ["zero amount", { amount: "0" }, /zero/],
     ["foreign fee payer", { extra: { ...ex, feePayer: "0.0.999" } }, /feePayer/],
-    ["quote for another head commit", { extra: { ...ex, headSha: "a".repeat(40) } }, /bound to head/],
-    ["quote for another base commit", { extra: { ...ex, baseSha: "b".repeat(40) } }, /bound to base/],
-    ["quote for another repository id", { extra: { ...ex, repositoryId: 1 } }, /repository id/],
-    ["quote for another PR", { extra: { ...ex, pullNumber: 8 } }, /PR/],
-    ["quote for another scanner version", { extra: { ...ex, scannerVersion: "other/9" } }, /scanner/],
+    ["quote for another head commit", sl({ headSha: "a".repeat(40) }), /different revision \(headSha\)/],
+    ["quote for another base commit", sl({ baseSha: "b".repeat(40) }), /\(baseSha\)/],
+    ["quote for another diff", sl({ diffSha256: "c".repeat(64) }), /\(diffSha256\)/],
+    ["quote for another repository id", sl({ repositoryId: 1 }), /\(repositoryId\)/],
+    ["quote for another PR", sl({ pullNumber: 8 }), /\(pullNumber\)/],
+    ["quote for another scanner version", sl({ scannerVersion: "other/9" }), /\(scannerVersion\)/],
+    ["quote for another job id", sl({ jobId: "other" }), /\(jobId\)/],
+    ["binding with extra fields", sl({ evil: 1 }), /valid extra.shiplock/],
+    ["binding missing", { extra: { feePayer: FEE_PAYER } }, /valid extra.shiplock/],
     ["upto scheme", { scheme: "upto" }, /scheme/],
   ])("%s", (_n, patch, re) => {
     expect(rejectReason({ ...base, ...patch } as PaymentRequirements, ctx)).toMatch(re);
@@ -136,9 +143,10 @@ describe("buyer policy (nothing is signed)", () => {
 
   it("end-to-end: over-cap and SHA-mismatch purchases throw PaymentPolicyError and never hit settle", async () => {
     const { buyer, url, facilitator, ledger } = await setup({ price: 20_000n });
-    await expect(buyer().purchaseReview({ job: { ...JOB, jobId: "j", headSha: SHA }, reviewUrl: url("j"), maxTinybar: "50000" })).rejects.toBeInstanceOf(PaymentPolicyError);
+    await expect(buyer().purchaseReview({ job: { ...JOB, jobId: "j", headSha: SHA }, expectedDiffSha256: DIFF_SHA, reviewUrl: url("j"), maxTinybar: "50000" })).rejects.toBeInstanceOf(PaymentPolicyError);
     const s2 = await setup();
-    await expect(s2.buyer().purchaseReview({ job: { ...JOB, jobId: "j", headSha: "b".repeat(40) }, reviewUrl: s2.url("j"), maxTinybar: "5000" })).rejects.toBeInstanceOf(PaymentPolicyError);
+    await expect(s2.buyer().purchaseReview({ job: { ...JOB, jobId: "j", headSha: "b".repeat(40) }, expectedDiffSha256: DIFF_SHA, reviewUrl: s2.url("j"), maxTinybar: "5000" })).rejects.toBeInstanceOf(PaymentPolicyError);
+    await expect(s2.buyer().purchaseReview({ job: { ...JOB, jobId: "j2" }, expectedDiffSha256: "d".repeat(64), reviewUrl: s2.url("j2"), maxTinybar: "5000" })).rejects.toBeInstanceOf(PaymentPolicyError);
     expect(facilitator.calls.verify + s2.facilitator.calls.verify).toBe(0);
     expect(ledger.submitCount + s2.ledger.submitCount).toBe(0);
   });
@@ -196,6 +204,12 @@ describe("merchant rejects bad payments (real SDK verification)", () => {
     const res = await s.fetchImpl(s.url(), { headers: { "PAYMENT-SIGNATURE": header } });
     expect(res.status).toBe(402);
     expect(s.ledger.submitCount).toBe(0);
+  });
+
+  it("quote replayed against a different diff digest -> quote_resource_mismatch", async () => {
+    const { pr, req } = await getQuote(s.fetchImpl, s.url());
+    const res = await s.fetchImpl(s.url("job-1", SHA, "9".repeat(64)), { headers: { "PAYMENT-SIGNATURE": await signedHeader(pr, req) } });
+    expect(res.status).toBe(400);
   });
 
   it("quote replayed against a different commit -> quote_resource_mismatch", async () => {
@@ -264,21 +278,21 @@ describe("replay / duplicate payment", () => {
 describe("uncertain settlement", () => {
   it("facilitator throws AFTER submit -> merchant reconciles via mirror and fulfils, no re-settle", async () => {
     const s = await setup({ settleMode: () => "throw_after_submit" });
-    const r = await s.buyer().purchaseReview({ job: { ...JOB, jobId: "job-1", headSha: SHA }, reviewUrl: s.url(), maxTinybar: "5000" });
+    const r = await s.buyer().purchaseReview({ job: { ...JOB, jobId: "job-1", headSha: SHA }, expectedDiffSha256: DIFF_SHA, reviewUrl: s.url(), maxTinybar: "5000" });
     expect(r.settlementConfirmed).toBe(true);
     expect(s.ledger.submitCount).toBe(1);
   });
 
   it("facilitator reports failure but tx actually landed -> reconciled as paid", async () => {
     const s = await setup({ settleMode: () => "report_failure_after_submit" });
-    const r = await s.buyer().purchaseReview({ job: { ...JOB, jobId: "job-1", headSha: SHA }, reviewUrl: s.url(), maxTinybar: "5000" });
+    const r = await s.buyer().purchaseReview({ job: { ...JOB, jobId: "job-1", headSha: SHA }, expectedDiffSha256: DIFF_SHA, reviewUrl: s.url(), maxTinybar: "5000" });
     expect(r.settlementConfirmed).toBe(true);
     expect(s.ledger.submitCount).toBe(1);
   });
 
   it("facilitator throws BEFORE submit and tx still valid -> 503 pending + PaymentUncertainError; state kept 'uncertain'", async () => {
     const s = await setup({ settleMode: () => "throw_before_submit" });
-    const err = await s.buyer().purchaseReview({ job: { ...JOB, jobId: "job-1", headSha: SHA }, reviewUrl: s.url(), maxTinybar: "5000" }).catch((e) => e);
+    const err = await s.buyer().purchaseReview({ job: { ...JOB, jobId: "job-1", headSha: SHA }, expectedDiffSha256: DIFF_SHA, reviewUrl: s.url(), maxTinybar: "5000" }).catch((e) => e);
     expect(err).toBeInstanceOf(PaymentUncertainError);
     const pay = s.merchant.store.getPaymentByTx((err as PaymentUncertainError).transactionId!)!;
     expect(pay.state).toBe("uncertain");
@@ -308,9 +322,16 @@ describe("uncertain settlement", () => {
 });
 
 describe("audit integrity", () => {
+  it("buyer rejects a paid report that reviewed a different diff", async () => {
+    const s = await setup({ auditor: async (j) => ({ ...(await noopAuditor(j)), diffSha256: "8".repeat(64) }) });
+    // merchant itself refuses (binding check includes diffSha256) -> paid, not fulfilled
+    const err = await s.buyer().purchaseReview({ job: JOB, expectedDiffSha256: DIFF_SHA, reviewUrl: s.url(), maxTinybar: "5000" }).catch((e) => e);
+    expect(err).toBeInstanceOf(PaidButNotFulfilledError);
+  });
+
   it("paid result passes the shared PaidReviewResultSchema and the report equals ShipLock's own scan", async () => {
     const s = await setup();
-    const r = await s.buyer().purchaseReview({ job: JOB, reviewUrl: s.url(), maxTinybar: "5000" });
+    const r = await s.buyer().purchaseReview({ job: JOB, expectedDiffSha256: DIFF_SHA, reviewUrl: s.url(), maxTinybar: "5000" });
     const { PaidReviewResultSchema, canonicalSha256 } = await import("@shiplock/shared");
     const { scanDiff } = await import("@shiplock/scanner");
     const { FIXTURE_DIFF } = await import("./harness.ts");
@@ -327,13 +348,13 @@ describe("audit integrity", () => {
 
   it("merchant refuses to serve an auditor report for a different revision (paid, 503, no re-pay)", async () => {
     const s = await setup({ auditor: async (j) => ({ ...(await noopAuditor(j)), headSha: "e".repeat(40) }) });
-    const err = await s.buyer().purchaseReview({ job: JOB, reviewUrl: s.url(), maxTinybar: "5000" }).catch((e) => e);
+    const err = await s.buyer().purchaseReview({ job: JOB, expectedDiffSha256: DIFF_SHA, reviewUrl: s.url(), maxTinybar: "5000" }).catch((e) => e);
     expect(err).toBeInstanceOf(PaidButNotFulfilledError);
   });
 
   it("merchant cannot return an audit for a different commit (report pinned to quote SHA)", async () => {
     const s = await setup();
-    const r = await s.buyer().purchaseReview({ job: { ...JOB, jobId: "job-1", headSha: SHA }, reviewUrl: s.url(), maxTinybar: "5000" });
+    const r = await s.buyer().purchaseReview({ job: { ...JOB, jobId: "job-1", headSha: SHA }, expectedDiffSha256: DIFF_SHA, reviewUrl: s.url(), maxTinybar: "5000" });
     expect(r.evidence.body.report.headSha).toBe(SHA);
   });
 
@@ -347,7 +368,7 @@ describe("audit integrity", () => {
         body.reportSha256 = reportDigest(body.report as never);
         return new Response(JSON.stringify(body), { status: 200, headers: res.headers });
       })) as typeof fetch;
-    const err = await s.buyer({ fetchImpl: evil }).purchaseReview({ job: { ...JOB, jobId: "job-1", headSha: SHA }, reviewUrl: s.url(), maxTinybar: "5000" }).catch((e) => e);
+    const err = await s.buyer({ fetchImpl: evil }).purchaseReview({ job: { ...JOB, jobId: "job-1", headSha: SHA }, expectedDiffSha256: DIFF_SHA, reviewUrl: s.url(), maxTinybar: "5000" }).catch((e) => e);
     expect(err).toBeInstanceOf(AuditShaMismatchError);
     expect(err.transactionId).toMatch(/^0\.0\.7162784@/);
   });
@@ -369,7 +390,7 @@ describe("audit integrity", () => {
 
   it("buyer surfaces paid-but-unfulfilled distinctly (no blind re-pay)", async () => {
     const s = await setup({ auditor: async () => { throw new Error("down"); } });
-    const err = await s.buyer().purchaseReview({ job: { ...JOB, jobId: "job-1", headSha: SHA }, reviewUrl: s.url(), maxTinybar: "5000" }).catch((e) => e);
+    const err = await s.buyer().purchaseReview({ job: { ...JOB, jobId: "job-1", headSha: SHA }, expectedDiffSha256: DIFF_SHA, reviewUrl: s.url(), maxTinybar: "5000" }).catch((e) => e);
     expect(err).toBeInstanceOf(PaidButNotFulfilledError);
   });
 });
@@ -393,5 +414,60 @@ describe("mirror ids", () => {
   it("converts SDK tx id to mirror format", () => {
     expect(toMirrorTransactionId("0.0.7162784@1794012935.145851264")).toBe("0.0.7162784-1794012935-145851264");
     expect(toMirrorTransactionId("0.0.1@1.5")).toBe("0.0.1-1-000000005");
+  });
+});
+
+describe("merchant pre-quote GitHub verification (contract v2 step 1-2)", () => {
+  async function withGithub() {
+    const ledger = new Ledger();
+    const merchant = await createAuditMerchant({
+      network: NETWORK, payTo: PAY_TO, priceTinybar: 1000n, facilitator: createStrictFacilitator(ledger), mirror: ledger,
+      auditor: noopAuditor, publicBaseUrl: BASE, mirrorTimeoutMs: 0, github: fakeGithub,
+    });
+    const f = ((i: string | URL | Request, init?: RequestInit) => merchant.app.fetch(new Request(i, init))) as typeof fetch;
+    return { f, ledger };
+  }
+  it("quotes when repo id, PR head/base and diff digest match GitHub", async () => {
+    const { f } = await withGithub();
+    expect((await f(auditUrl(BASE, JOB, DIFF_SHA))).status).toBe(402);
+  });
+  it("refuses to quote (no 402, nobody pays) for a wrong diff digest", async () => {
+    const { f } = await withGithub();
+    const res = await f(auditUrl(BASE, JOB, "7".repeat(64)));
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ detail: "diff_sha256_mismatch" });
+  });
+  it("refuses to quote when the PR head has moved", async () => {
+    const { f } = await withGithub();
+    fakeGithub.head = "1".repeat(40);
+    try {
+      const res = await f(auditUrl(BASE, JOB, DIFF_SHA));
+      expect(await res.json()).toMatchObject({ detail: "head_sha_not_current" });
+    } finally {
+      fakeGithub.head = SHA;
+    }
+  });
+  it("refuses to quote for a wrong repository id", async () => {
+    const { f } = await withGithub();
+    const res = await f(auditUrl(BASE, { ...JOB, repositoryId: 42 }, DIFF_SHA));
+    expect(await res.json()).toMatchObject({ detail: "repository_id_mismatch" });
+  });
+});
+
+describe("merchant store schema", () => {
+  it("refuses to open a store from an older schema version", async () => {
+    const { DatabaseSync } = await import("node:sqlite");
+    const { MerchantStore } = await import("../src/merchant/store.ts");
+    const { mkdtempSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const { tmpdir } = await import("node:os");
+    const file = join(mkdtempSync(join(tmpdir(), "x402-")), "m.sqlite");
+    const old = new DatabaseSync(file);
+    old.exec("CREATE TABLE quotes (quote_id TEXT PRIMARY KEY); PRAGMA user_version = 1;");
+    old.close();
+    expect(() => new MerchantStore(file)).toThrow(/schema v1, expected v2/);
+    const fresh = join(mkdtempSync(join(tmpdir(), "x402-")), "n.sqlite");
+    new MerchantStore(fresh).close();
+    expect(() => new MerchantStore(fresh).close()).not.toThrow();
   });
 });

@@ -12,7 +12,7 @@ import type { PaymentPayload, PaymentRequirements, SettleResponse, SupportedResp
 import { ExactHederaScheme as FacilitatorScheme } from "@x402/hedera/exact/facilitator";
 import { PrivateKey, Transaction, inspectHederaTransaction, extractTransactionFromPayload } from "@x402/hedera";
 import type { MirrorClient, MirrorStatus } from "../src/mirror.ts";
-import type { ReviewJob } from "@shiplock/shared";
+import { sha256Hex, type ReviewJob } from "@shiplock/shared";
 import { SCANNER_VERSION } from "@shiplock/scanner";
 import { createScannerAuditor } from "../src/merchant/scanner-auditor.ts";
 import type { Auditor } from "../src/audit.ts";
@@ -125,6 +125,23 @@ export const JOB: ReviewJob = {
   headSha: SHA,
   baseSha: BASE_SHA,
   scannerVersion: SCANNER_VERSION,
+};
+
+export const DIFF_SHA = sha256Hex(FIXTURE_DIFF);
+
+/** Fake GitHub reader for merchant pre-quote checks (repo id, PR open, head/base, diff bytes). */
+export const fakeGithub = {
+  head: SHA,
+  async getPullRequest(repository: string, number: number) {
+    return {
+      repositoryId: JOB.repositoryId, repository, number, state: "open" as const, merged: false, draft: false, title: "t",
+      htmlUrl: "", authorLogin: "bot", headSha: fakeGithub.head, headRef: "feat", headRepository: repository, baseSha: BASE_SHA, baseRef: "main",
+    } as never;
+  },
+  async getCompareDiff(_r: string, base: string, head: string) {
+    if (base !== BASE_SHA || head !== SHA) throw new Error(`no fixture for ${base}...${head}`);
+    return FIXTURE_DIFF;
+  },
 };
 
 export const scannerAuditor: Auditor = createScannerAuditor({

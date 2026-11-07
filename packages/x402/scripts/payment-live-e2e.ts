@@ -76,7 +76,9 @@ async function main() {
     scannerVersion: SCANNER_VERSION,
   };
   // ShipLock's own independent scan of the same SHA-pinned diff (what Cursor's API stores as local_report_sha256).
-  const localScan = scanDiff(job, await github.getCompareDiff(REPO, job.baseSha, job.headSha));
+  const diffBytes = await github.getCompareDiff(REPO, job.baseSha, job.headSha);
+  const diffSha256 = sha256Hex(diffBytes);
+  const localScan = scanDiff(job, diffBytes);
   log("job", { ...job, localReportSha256: localScan.reportSha256, conclusion: localScan.report.conclusion });
   const before = await balances([PAYER, PAY_TO, capability.feePayer]);
 
@@ -89,6 +91,7 @@ async function main() {
     mirror,
     store,
     auditor: createScannerAuditor({ github }),
+    github,
     repoAllowlist: [REPO],
     publicBaseUrl: `http://127.0.0.1:${PORT}`,
     log: (e, d) => log(`merchant.${e}`, d),
@@ -97,10 +100,10 @@ async function main() {
 
   try {
     const base = `http://127.0.0.1:${PORT}`;
-    const reviewUrl = auditUrl(base, job);
+    const reviewUrl = auditUrl(base, job, diffSha256);
     const variant = (suffix: string, patch: Partial<ReviewJob> = {}) => {
       const j = { ...job, jobId: `${job.jobId}-${suffix}`, ...patch };
-      return { j, url: auditUrl(base, j) };
+      return { j, url: auditUrl(base, j, diffSha256) };
     };
 
     // 1) Raw unpaid probe: standards-compliant 402.
@@ -122,7 +125,7 @@ async function main() {
       onSigned: ({ transactionId }) => log("signed", { transactionId }),
     });
     const t0 = Date.now();
-    const result = await buyer.purchaseReview({ job, reviewUrl, maxTinybar: MAX.toString() });
+    const result = await buyer.purchaseReview({ job, expectedDiffSha256: diffSha256, reviewUrl, maxTinybar: MAX.toString() });
     const elapsedMs = Date.now() - t0;
     log("paid", { tx: result.hederaTransactionId, reportSha256: result.reportSha256, findings: result.report.findings.length, elapsedMs });
 
@@ -130,7 +133,7 @@ async function main() {
     const { evidence: _ev, ...plainResult } = result;
     const cursorVerdict = verifyPaidReviewResult(job, plainResult, {
       network: NETWORK, asset: "0.0.0", merchantAccountId: PAY_TO, quotedTinybar: PRICE.toString(), maxTinybar: MAX.toString(),
-      allowedEvidenceKinds: ["live"], independentReportSha256: localScan.reportSha256,
+      allowedEvidenceKinds: ["live"], independentReportSha256: localScan.reportSha256, diffSha256,
     });
     const cursorLedger = await checkHederaTransfer(fetch, MIRROR, { transactionId: result.hederaTransactionId, payer: PAYER, merchant: PAY_TO, amountTinybar: result.amountBaseUnits });
     log("cursor_acceptance", { verdict: cursorVerdict.ok ? "ok" : cursorVerdict.reasons, ledger: cursorLedger });
@@ -149,20 +152,20 @@ async function main() {
     // 3b) Over-cap: buyer refuses to sign.
     negatives.over_cap = await expectThrow(PaymentPolicyError, () =>
       createReviewPurchaser({ network: NETWORK, payerAccountId: PAYER, payerPrivateKey: PAYER_KEY, allowedPayTo: [PAY_TO], expectedFeePayer: capability.feePayer, globalMaxTinybar: PRICE - 1n, mirror }).purchaseReview({
-        job: variant("cap").j, reviewUrl: variant("cap").url, maxTinybar: (PRICE - 1n).toString(),
+        job: variant("cap").j, expectedDiffSha256: diffSha256, reviewUrl: variant("cap").url, maxTinybar: (PRICE - 1n).toString(),
       }),
     );
 
     // 3c) Wrong recipient allowlist: buyer refuses.
     negatives.wrong_recipient = await expectThrow(PaymentPolicyError, () =>
       createReviewPurchaser({ network: NETWORK, payerAccountId: PAYER, payerPrivateKey: PAYER_KEY, allowedPayTo: ["0.0.1234"], expectedFeePayer: capability.feePayer, globalMaxTinybar: MAX, mirror }).purchaseReview({
-        job: variant("rcpt").j, reviewUrl: variant("rcpt").url, maxTinybar: MAX.toString(),
+        job: variant("rcpt").j, expectedDiffSha256: diffSha256, reviewUrl: variant("rcpt").url, maxTinybar: MAX.toString(),
       }),
     );
 
     // 3d) Agent expects a different head than the URL/quote describes: buyer refuses to sign.
     negatives.sha_mismatch_presign = await expectThrow(PaymentPolicyError, () =>
-      buyer.purchaseReview({ job: { ...variant("sha").j, headSha: "0".repeat(40) }, reviewUrl: variant("sha").url, maxTinybar: MAX.toString() }),
+      buyer.purchaseReview({ job: { ...variant("sha").j, headSha: "0".repeat(40) }, expectedDiffSha256: diffSha256, reviewUrl: variant("sha").url, maxTinybar: MAX.toString() }),
     );
 
     // 3e) Modified quote (amount lowered) signed by the real key: merchant rejects before facilitator.
@@ -170,6 +173,14 @@ async function main() {
 
     // 3f) Invalid signature: valid tx body signed by a random key -> real facilitator /verify rejects.
     negatives.invalid_signature = await tamperedPayment(variant("badsig").url, (r) => r, PrivateKey.generateECDSA());
+
+    // 3g) Merchant refuses to quote a wrong diff digest (no 402 issued, nobody can pay).
+    const wrongDiff = await fetch(auditUrl(base, variant("diff").j, "0".repeat(64)));
+    negatives.wrong_diff_no_quote = `${wrongDiff.status} ${JSON.stringify(await wrongDiff.json())}`;
+    // 3h) Agent expects a different diff than the quote: buyer refuses to sign.
+    negatives.diff_mismatch_presign = await expectThrow(PaymentPolicyError, () =>
+      buyer.purchaseReview({ job: variant("diff2").j, expectedDiffSha256: "1".repeat(64), reviewUrl: variant("diff2").url, maxTinybar: MAX.toString() }),
+    );
 
     log("negatives", negatives);
 
@@ -200,6 +211,7 @@ async function main() {
         repository: REPO,
         pullRequest: `https://github.com/${REPO}/pull/${PR}`,
         localReportSha256: localScan.reportSha256,
+        expectedDiffSha256: diffSha256,
         headSha: result.headSha,
         reportSha256: result.reportSha256,
         responseBodySha256: sha256Hex(canonicalJson(result.evidence.body)),

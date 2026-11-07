@@ -19,6 +19,7 @@ export interface QuoteRow {
   headSha: string;
   baseSha: string;
   scannerVersion: string;
+  diffSha256: string;
   requirementsJson: string;
   resourceUrl: string;
   createdAt: number;
@@ -43,13 +44,24 @@ export interface FulfillmentRow {
   reportSha256: string;
 }
 
+/** v2: quotes bind the full ReviewQuoteBinding (repo id, PR, base, head, scanner, diff digest). */
+export const SCHEMA_VERSION = 2;
+
 export class MerchantStore {
   private readonly db: DatabaseSync;
 
   constructor(path = ":memory:") {
     this.db = new DatabaseSync(path);
+    // Schema is versioned; an older merchant DB is refused rather than silently reused, because
+    // quotes from an older binding format must never be honoured under the new one.
+    const version = Number((this.db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version);
+    const hasTables = this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='quotes'").get() !== undefined;
+    if (hasTables && version !== SCHEMA_VERSION) {
+      throw new Error(`merchant store ${path} has schema v${version}, expected v${SCHEMA_VERSION}; move it aside (it holds payment history) and start fresh`);
+    }
     this.db.exec(`
       PRAGMA journal_mode = WAL;
+      PRAGMA user_version = ${SCHEMA_VERSION};
       CREATE TABLE IF NOT EXISTS quotes (
         quote_id TEXT PRIMARY KEY,
         job_id TEXT NOT NULL,
@@ -59,6 +71,7 @@ export class MerchantStore {
         head_sha TEXT NOT NULL,
         base_sha TEXT NOT NULL,
         scanner_version TEXT NOT NULL,
+        diff_sha256 TEXT NOT NULL,
         requirements_json TEXT NOT NULL,
         resource_url TEXT NOT NULL,
         created_at INTEGER NOT NULL,
@@ -86,10 +99,10 @@ export class MerchantStore {
   insertQuote(q: QuoteRow): void {
     this.db
       .prepare(
-        `INSERT INTO quotes (quote_id, job_id, repository_id, repository, pull_number, head_sha, base_sha, scanner_version, requirements_json, resource_url, created_at, expires_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO quotes (quote_id, job_id, repository_id, repository, pull_number, head_sha, base_sha, scanner_version, diff_sha256, requirements_json, resource_url, created_at, expires_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(q.quoteId, q.jobId, q.repositoryId, q.repository, q.pullNumber, q.headSha, q.baseSha, q.scannerVersion, q.requirementsJson, q.resourceUrl, q.createdAt, q.expiresAt);
+      .run(q.quoteId, q.jobId, q.repositoryId, q.repository, q.pullNumber, q.headSha, q.baseSha, q.scannerVersion, q.diffSha256, q.requirementsJson, q.resourceUrl, q.createdAt, q.expiresAt);
   }
 
   getQuote(quoteId: string): QuoteRow | undefined {
@@ -104,6 +117,7 @@ export class MerchantStore {
       headSha: String(r.head_sha),
       baseSha: String(r.base_sha),
       scannerVersion: String(r.scanner_version),
+      diffSha256: String(r.diff_sha256),
       requirementsJson: String(r.requirements_json),
       resourceUrl: String(r.resource_url),
       createdAt: Number(r.created_at),

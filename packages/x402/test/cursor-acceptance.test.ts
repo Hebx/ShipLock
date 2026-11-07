@@ -8,7 +8,7 @@ import { verifyPaidReviewResult } from "../../policy/src/paid-review.ts";
 import { checkHederaTransfer } from "../../../apps/api/src/mirror-node.ts";
 import { scanDiff } from "@shiplock/scanner";
 import { createAuditMerchant, createReviewPurchaser, auditUrl } from "../src/index.ts";
-import { createStrictFacilitator, FEE_PAYER, FIXTURE_DIFF, JOB, Ledger, NETWORK, PAY_TO, PAYER, payerKey, scannerAuditor } from "./harness.ts";
+import { createStrictFacilitator, DIFF_SHA, fakeGithub, FEE_PAYER, FIXTURE_DIFF, JOB, Ledger, NETWORK, PAY_TO, PAYER, payerKey, scannerAuditor } from "./harness.ts";
 
 const BASE = "http://merchant.test";
 
@@ -16,14 +16,14 @@ async function purchase() {
   const ledger = new Ledger();
   const merchant = await createAuditMerchant({
     network: NETWORK, payTo: PAY_TO, priceTinybar: 1000n, facilitator: createStrictFacilitator(ledger),
-    mirror: ledger, auditor: scannerAuditor, publicBaseUrl: BASE, mirrorTimeoutMs: 0,
+    mirror: ledger, auditor: scannerAuditor, publicBaseUrl: BASE, mirrorTimeoutMs: 0, github: fakeGithub,
   });
   const fetchImpl = ((i: string | URL | Request, init?: RequestInit) => merchant.app.fetch(new Request(i, init))) as typeof fetch;
   const buyer = createReviewPurchaser({
     network: NETWORK, payerAccountId: PAYER, payerPrivateKey: payerKey.toStringRaw(), allowedPayTo: [PAY_TO],
     expectedFeePayer: FEE_PAYER, globalMaxTinybar: 10_000n, mirror: ledger, mirrorTimeoutMs: 0, fetchImpl,
   });
-  const r = await buyer.purchaseReview({ job: JOB, reviewUrl: auditUrl(BASE, JOB), maxTinybar: "10000" });
+  const r = await buyer.purchaseReview({ job: JOB, expectedDiffSha256: DIFF_SHA, reviewUrl: auditUrl(BASE, JOB, DIFF_SHA), maxTinybar: "10000" });
   return { r, ledger };
 }
 
@@ -35,6 +35,7 @@ const expectations = (independentReportSha256: string) => ({
   maxTinybar: "10000",
   allowedEvidenceKinds: ["live"] as const,
   independentReportSha256,
+  diffSha256: DIFF_SHA,
 });
 
 describe("Hermes buyer output vs Cursor acceptance (unmodified Cursor code)", () => {
